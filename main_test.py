@@ -49,7 +49,8 @@ class Config:
         "view_mode": "list",
         "sort_by": "name_asc",
         "theme": "light",
-        "window_geometry": None
+        "window_geometry": None,
+        "close_action": "hide_to_tray"  # 新增：关闭按钮行为，可选值："hide_to_tray" 或 "quit"
     }
 
     def __init__(self, config_path="config.json"):
@@ -63,6 +64,10 @@ class Config:
 
         # 确保配置文件中的file_types是正确的
         self._validate_file_types()
+
+        # 确保close_action是有效的
+        if "close_action" not in self.data:
+            self.data["close_action"] = self.DEFAULT_CONFIG["close_action"]
 
     def load_config(self):
         try:
@@ -602,9 +607,14 @@ class MainWindow(QMainWindow):
         self.current_view = self.config.data.get("view_mode", "list")
         self.current_theme = self.config.data.get("theme", "light")
         self.scanner = None
+        self.tray_icon = None
+        self.is_minimized_to_tray = False
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(self.get_logo_path()))
+
+        # 初始化系统托盘
+        self.init_tray_icon()
 
         self.init_ui()
         QTimer.singleShot(100, self.load_notes)
@@ -621,6 +631,114 @@ class MainWindow(QMainWindow):
             if os.path.exists(path):
                 return path
         return None
+
+    def init_tray_icon(self):
+        """初始化系统托盘图标"""
+        try:
+            # 创建系统托盘图标
+            self.tray_icon = QSystemTrayIcon(self)
+
+            # 设置托盘图标
+            icon_path = self.get_logo_path()
+            if icon_path:
+                self.tray_icon.setIcon(QIcon(icon_path))
+            else:
+                # 如果没有图标，使用默认的图标
+                self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+
+            # 创建托盘菜单
+            tray_menu = QMenu()
+
+            # 显示主窗口
+            show_action = tray_menu.addAction("显示主窗口")
+            show_action.triggered.connect(self.show_from_tray)
+
+            # 分隔线
+            tray_menu.addSeparator()
+
+            # 退出程序
+            quit_action = tray_menu.addAction("退出")
+            quit_action.triggered.connect(self.quit_application)
+
+            # 设置托盘菜单
+            self.tray_icon.setContextMenu(tray_menu)
+
+            # 连接托盘图标点击事件
+            self.tray_icon.activated.connect(self.tray_icon_activated)
+
+        except Exception as e:
+            print(f"初始化托盘图标错误: {e}")
+
+    def tray_icon_activated(self, reason):
+        """托盘图标激活事件处理"""
+        try:
+            # 双击托盘图标显示主窗口
+            if reason == QSystemTrayIcon.DoubleClick:
+                self.show_from_tray()
+            # 在macOS上，可能需要处理其他事件
+            elif reason == QSystemTrayIcon.Trigger:
+                # 单击显示上下文菜单
+                pass
+        except Exception as e:
+            print(f"托盘图标激活错误: {e}")
+
+    def show_from_tray(self):
+        """从托盘恢复显示窗口"""
+        try:
+            self.showNormal()  # 恢复窗口
+            self.activateWindow()  # 激活窗口
+            self.raise_()  # 置顶窗口
+
+            if self.tray_icon:
+                self.tray_icon.hide()  # 隐藏托盘图标
+
+            self.is_minimized_to_tray = False
+            self.statusBar().showMessage("已从托盘恢复")
+        except Exception as e:
+            print(f"从托盘恢复错误: {e}")
+
+    def hide_to_tray(self):
+        """隐藏窗口到托盘"""
+        try:
+            self.hide()  # 隐藏主窗口
+
+            if self.tray_icon:
+                # 显示系统托盘图标
+                self.tray_icon.show()
+
+                # 显示通知
+                self.tray_icon.showMessage(
+                    "森明笔记",
+                    "程序已最小化到托盘，点击托盘图标可恢复窗口",
+                    QSystemTrayIcon.Information,
+                    3000
+                )
+
+            self.is_minimized_to_tray = True
+        except Exception as e:
+            print(f"隐藏到托盘错误: {e}")
+
+    def quit_application(self):
+        """退出应用程序"""
+        try:
+            # 关闭窗口时保存配置
+            self.config.data["window_geometry"] = self.saveGeometry().toHex().data().decode()
+            self.config.save_config()
+
+            # 停止扫描线程
+            if self.scanner and self.scanner.isRunning():
+                self.scanner.cancel()
+                self.scanner.wait()
+
+            # 隐藏托盘图标
+            if self.tray_icon:
+                self.tray_icon.hide()
+
+            # 退出应用程序
+            QApplication.quit()
+        except Exception as e:
+            print(f"退出应用程序错误: {e}")
+            QApplication.quit()
 
     def init_ui(self):
         try:
@@ -1224,7 +1342,7 @@ class MainWindow(QMainWindow):
 
     def open_settings(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, \
-            QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox
+            QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox, QComboBox
         from PyQt5.QtCore import Qt
 
         class SettingsDialog(QDialog):
@@ -1237,7 +1355,7 @@ class MainWindow(QMainWindow):
 
             def init_ui(self):
                 self.setWindowTitle("设置 - 森明笔记")
-                self.setFixedSize(600, 500)
+                self.setFixedSize(600, 550)  # 增加高度以容纳新的设置项
 
                 layout = QVBoxLayout()
 
@@ -1255,6 +1373,29 @@ class MainWindow(QMainWindow):
                 folder_layout.addLayout(folder_hbox)
 
                 folder_group.setLayout(folder_layout)
+
+                # 新增：关闭按钮行为设置
+                behavior_group = QGroupBox("程序行为设置")
+                behavior_layout = QVBoxLayout()
+
+                behavior_hbox = QHBoxLayout()
+                behavior_hbox.addWidget(QLabel("关闭窗口按钮行为:"))
+
+                self.close_action_combo = QComboBox()
+                self.close_action_combo.addItems(["隐藏到托盘", "直接退出程序"])
+
+                # 设置当前选择
+                close_action = self.config.data.get("close_action", "hide_to_tray")
+                if close_action == "hide_to_tray":
+                    self.close_action_combo.setCurrentIndex(0)
+                else:
+                    self.close_action_combo.setCurrentIndex(1)
+
+                behavior_hbox.addWidget(self.close_action_combo)
+                behavior_hbox.addStretch()
+
+                behavior_layout.addLayout(behavior_hbox)
+                behavior_group.setLayout(behavior_layout)
 
                 type_group = QGroupBox("文件类型设置")
                 type_layout = QVBoxLayout()
@@ -1291,6 +1432,7 @@ class MainWindow(QMainWindow):
                 button_layout.addWidget(cancel_btn)
 
                 layout.addWidget(folder_group)
+                layout.addWidget(behavior_group)  # 添加行为设置组
                 layout.addWidget(type_group)
                 layout.addLayout(button_layout)
 
@@ -1413,6 +1555,13 @@ class MainWindow(QMainWindow):
             def save_all(self):
                 self.config.data["notes_folder"] = self.folder_edit.text()
 
+                # 保存关闭按钮行为设置
+                close_action_index = self.close_action_combo.currentIndex()
+                if close_action_index == 0:
+                    self.config.data["close_action"] = "hide_to_tray"
+                else:
+                    self.config.data["close_action"] = "quit"
+
                 new_file_types = {}
                 for row in range(self.type_table.rowCount()):
                     type_str = self.type_table.item(row, 0).text()
@@ -1443,15 +1592,30 @@ class MainWindow(QMainWindow):
             print(f"打开设置错误: {e}")
 
     def closeEvent(self, event):
+        """重写关闭事件，根据配置决定行为"""
         try:
+            # 保存窗口位置和大小
             self.config.data["window_geometry"] = self.saveGeometry().toHex().data().decode()
             self.config.save_config()
 
+            # 停止扫描线程
             if self.scanner and self.scanner.isRunning():
                 self.scanner.cancel()
                 self.scanner.wait()
 
-            event.accept()
+            # 获取配置中的关闭行为
+            close_action = self.config.data.get("close_action", "hide_to_tray")
+
+            if close_action == "hide_to_tray":
+                # 隐藏到托盘
+                self.hide_to_tray()
+                event.ignore()
+            else:
+                # 直接退出程序
+                if self.tray_icon:
+                    self.tray_icon.hide()
+                event.accept()
+
         except Exception as e:
             print(f"关闭事件错误: {e}")
             event.accept()
