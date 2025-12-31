@@ -1,0 +1,5 @@
+PyQt5>=5.15.0
+PyQtWebEngine>=5.15.0
+markdown2>=2.4.0
+python-docx>=0.8.11
+pyinstaller>=5.0.0

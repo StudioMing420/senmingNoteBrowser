@@ -1,0 +1,37 @@
+{
+  "notes_folder": "D:/MyLife/AllTimeLine",
+  "file_types": {
+    "txt,text": {
+      "icon": "txt.png",
+      "external": "notepad.exe"
+    },
+    "md": {
+      "icon": "md.png",
+      "external": "D:\\BCFsoft\\Typora\\Typora.exe"
+    },
+    "html,htm": {
+      "icon": "html.png",
+      "external": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    },
+    "doc,docx": {
+      "icon": "doc.png",
+      "external": "WINWORD.EXE"
+    },
+    "mp4,avi,mkv,mov": {
+      "icon": "video.png",
+      "external": ""
+    },
+    "mp3,wav,flac": {
+      "icon": "audio.png",
+      "external": ""
+    }
+  },
+  "view_mode": "list",
+  "sort_by": "type_desc",
+  "text_encoding": "utf-8",
+  "html_js_enabled": true,
+  "html_cookies_enabled": true,
+  "recent_folders": [],
+  "window_geometry": "01d9d0cb00030000000002bb0000003a0000076c00000378000002bc000000580000076b0000037700000000000000000780000002bc000000580000076b00000377",
+  "theme": "dark"
+}
