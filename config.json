@@ -36,11 +36,11 @@
   "html_js_enabled": true,
   "html_cookies_enabled": true,
   "recent_folders": [],
-  "window_geometry": "01d9d0cb000300000000021700000031000006200000037000000218000000500000061f0000036f0000000000000000078000000218000000500000061f0000036f",
-  "theme": "dark",
+  "window_geometry": "01d9d0cb000300000000014a0000006d00000525000003cc0000014b0000008c00000524000003cb000000000000000007800000014b0000008c00000524000003cb",
+  "theme": "light",
   "close_action": "quit",
   "pinned_notes": [
-    "D:\\MyLife\\AllTimeLine\\临时文本.txt"
+    "D:\\MyLife\\AllTimeLine\\追剧-追游.txt"
   ],
   "auto_start": true
 }

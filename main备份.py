@@ -50,8 +50,9 @@ class Config:
         "sort_by": "name_asc",
         "theme": "light",
         "window_geometry": None,
-        "close_action": "hide_to_tray",  # 新增：关闭按钮行为，可选值："hide_to_tray" 或 "quit"
-        "pinned_notes": []  # 新增：置顶笔记列表，存储笔记的绝对路径
+        "close_action": "hide_to_tray",  # 关闭按钮行为，可选值："hide_to_tray" 或 "quit"
+        "auto_start": False,  # 新增：开机自启动
+        "pinned_notes": []  # 置顶笔记列表，存储笔记的绝对路径
     }
 
     def __init__(self, config_path="config.json"):
@@ -70,9 +71,16 @@ class Config:
         if "close_action" not in self.data:
             self.data["close_action"] = self.DEFAULT_CONFIG["close_action"]
 
+        # 确保auto_start存在
+        if "auto_start" not in self.data:
+            self.data["auto_start"] = self.DEFAULT_CONFIG["auto_start"]
+
         # 确保pinned_notes存在且是列表
         if "pinned_notes" not in self.data:
             self.data["pinned_notes"] = self.DEFAULT_CONFIG["pinned_notes"].copy()
+
+        # 如果配置中有auto_start设置，确保它应用到系统
+        self._apply_auto_start()
 
     def load_config(self):
         try:
@@ -93,6 +101,10 @@ class Config:
             os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
+
+            # 保存配置后，应用自启动设置
+            self._apply_auto_start()
+
             return True
         except Exception as e:
             print(f"保存配置失败: {e}")
@@ -180,6 +192,86 @@ class Config:
         except Exception as e:
             print(f"取消置顶笔记失败: {e}")
             return False
+
+    def _apply_auto_start(self):
+        """应用自启动设置到系统"""
+        try:
+            if sys.platform == "win32":
+                self._apply_windows_auto_start()
+            elif sys.platform == "darwin":
+                # macOS自启动实现
+                self._apply_macos_auto_start()
+            elif sys.platform.startswith('linux'):
+                # Linux自启动实现
+                self._apply_linux_auto_start()
+        except Exception as e:
+            print(f"应用自启动设置失败: {e}")
+
+    def _apply_windows_auto_start(self):
+        """Windows系统设置自启动"""
+        try:
+            import winreg
+
+            # 程序路径
+            exe_path = sys.executable
+            if not exe_path.endswith('.exe'):
+                # 如果是Python脚本运行，使用脚本路径
+                exe_path = os.path.abspath(sys.argv[0])
+                if not exe_path.endswith('.exe'):
+                    # 如果不是exe文件，可能是在开发环境，不设置自启动
+                    print("警告：不是可执行文件，跳过自启动设置")
+                    return
+
+            # 构建命令行参数（启动后最小化到托盘）
+            cmd = f'"{exe_path}" --minimized'
+
+            # 注册表路径
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            app_name = "SenMingNotes"
+
+            # 打开或创建注册表键
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+            except FileNotFoundError:
+                # 如果键不存在，创建它
+                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+
+            if self.data["auto_start"]:
+                # 设置自启动
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, cmd)
+                print(f"已设置自启动: {cmd}")
+            else:
+                # 删除自启动项
+                try:
+                    winreg.DeleteValue(key, app_name)
+                    print("已删除自启动")
+                except FileNotFoundError:
+                    # 如果键不存在，忽略
+                    pass
+
+            winreg.CloseKey(key)
+        except ImportError:
+            print("无法导入winreg模块，跳过Windows自启动设置")
+        except Exception as e:
+            print(f"设置Windows自启动失败: {e}")
+
+    def _apply_macos_auto_start(self):
+        """macOS系统设置自启动"""
+        try:
+            # macOS自启动实现
+            # 这里需要根据实际情况实现
+            print("macOS自启动功能尚未实现")
+        except Exception as e:
+            print(f"设置macOS自启动失败: {e}")
+
+    def _apply_linux_auto_start(self):
+        """Linux系统设置自启动"""
+        try:
+            # Linux自启动实现
+            # 这里需要根据实际情况实现
+            print("Linux自启动功能尚未实现")
+        except Exception as e:
+            print(f"设置Linux自启动失败: {e}")
 
 
 # 文件系统扫描线程
@@ -685,6 +777,7 @@ class MainWindow(QMainWindow):
         self.scanner = None
         self.tray_icon = None
         self.is_minimized_to_tray = False
+        self.start_minimized = "--minimized" in sys.argv  # 检查是否通过自启动参数启动
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(self.get_logo_path()))
@@ -693,6 +786,11 @@ class MainWindow(QMainWindow):
         self.init_tray_icon()
 
         self.init_ui()
+
+        # 如果是通过自启动参数启动，则直接最小化到托盘
+        if self.start_minimized:
+            QTimer.singleShot(500, self.hide_to_tray)
+
         QTimer.singleShot(100, self.load_notes)
 
     def get_logo_path(self):
@@ -782,13 +880,15 @@ class MainWindow(QMainWindow):
                 # 显示系统托盘图标
                 self.tray_icon.show()
 
-                # 显示通知
-                self.tray_icon.showMessage(
-                    "森明笔记",
-                    "程序已最小化到托盘，点击托盘图标可恢复窗口",
-                    QSystemTrayIcon.Information,
-                    3000
-                )
+                # 如果是通过自启动启动，不显示通知
+                if not self.start_minimized:
+                    # 显示通知
+                    self.tray_icon.showMessage(
+                        "森明笔记",
+                        "程序已最小化到托盘，点击托盘图标可恢复窗口",
+                        QSystemTrayIcon.Information,
+                        3000
+                    )
 
             self.is_minimized_to_tray = True
         except Exception as e:
@@ -1540,7 +1640,7 @@ class MainWindow(QMainWindow):
 
     def open_settings(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, \
-            QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox, QComboBox
+            QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox, QComboBox, QCheckBox
         from PyQt5.QtCore import Qt
 
         class SettingsDialog(QDialog):
@@ -1576,8 +1676,17 @@ class MainWindow(QMainWindow):
                 behavior_group = QGroupBox("程序行为设置")
                 behavior_layout = QVBoxLayout()
 
-                behavior_hbox = QHBoxLayout()
-                behavior_hbox.addWidget(QLabel("关闭窗口按钮行为:"))
+                # 第一行：自启动设置
+                auto_start_hbox = QHBoxLayout()
+                self.auto_start_checkbox = QCheckBox("开机自启动")
+                self.auto_start_checkbox.setChecked(self.config.data.get("auto_start", False))
+                auto_start_hbox.addWidget(self.auto_start_checkbox)
+                auto_start_hbox.addStretch()
+                behavior_layout.addLayout(auto_start_hbox)
+
+                # 第二行：关闭窗口按钮行为
+                close_action_hbox = QHBoxLayout()
+                close_action_hbox.addWidget(QLabel("关闭窗口按钮行为:"))
 
                 self.close_action_combo = QComboBox()
                 self.close_action_combo.addItems(["隐藏到托盘", "直接退出程序"])
@@ -1589,10 +1698,10 @@ class MainWindow(QMainWindow):
                 else:
                     self.close_action_combo.setCurrentIndex(1)
 
-                behavior_hbox.addWidget(self.close_action_combo)
-                behavior_hbox.addStretch()
+                close_action_hbox.addWidget(self.close_action_combo)
+                close_action_hbox.addStretch()
+                behavior_layout.addLayout(close_action_hbox)
 
-                behavior_layout.addLayout(behavior_hbox)
                 behavior_group.setLayout(behavior_layout)
 
                 type_group = QGroupBox("文件类型设置")
@@ -1659,7 +1768,7 @@ class MainWindow(QMainWindow):
                         QLabel {
                             color: #ffffff;
                         }
-                        QLineEdit, QTableWidget, QComboBox {
+                        QLineEdit, QTableWidget, QComboBox, QCheckBox {
                             background-color: #3c3c3c;
                             color: #ffffff;
                             border: 1px solid #555;
@@ -1697,7 +1806,7 @@ class MainWindow(QMainWindow):
                         QLabel {
                             color: #000000;
                         }
-                        QLineEdit, QTableWidget, QComboBox {
+                        QLineEdit, QTableWidget, QComboBox, QCheckBox {
                             background-color: #ffffff;
                             color: #000000;
                             border: 1px solid #ccc;
@@ -1752,6 +1861,9 @@ class MainWindow(QMainWindow):
 
             def save_all(self):
                 self.config.data["notes_folder"] = self.folder_edit.text()
+
+                # 保存自启动设置
+                self.config.data["auto_start"] = self.auto_start_checkbox.isChecked()
 
                 # 保存关闭按钮行为设置
                 close_action_index = self.close_action_combo.currentIndex()
