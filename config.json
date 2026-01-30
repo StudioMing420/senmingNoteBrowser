@@ -24,15 +24,23 @@
     "mp3,wav,flac": {
       "icon": "audio.png",
       "external": ""
+    },
+    "pdf": {
+      "icon": "pdf.png",
+      "external": ""
     }
   },
-  "view_mode": "grid",
+  "view_mode": "list",
   "sort_by": "mod_desc",
   "text_encoding": "utf-8",
   "html_js_enabled": true,
   "html_cookies_enabled": true,
   "recent_folders": [],
-  "window_geometry": "01d9d0cb000300000000021700000032000006200000037000000218000000500000061f0000036f0000000000000000078000000218000000500000061f0000036f",
+  "window_geometry": "01d9d0cb000300000000021700000031000006200000037000000218000000500000061f0000036f0000000000000000078000000218000000500000061f0000036f",
   "theme": "dark",
-  "close_action": "hide_to_tray"
+  "close_action": "quit",
+  "pinned_notes": [
+    "D:\\MyLife\\AllTimeLine\\临时文本.txt"
+  ],
+  "auto_start": true
 }

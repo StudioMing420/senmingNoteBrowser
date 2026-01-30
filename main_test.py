@@ -50,7 +50,9 @@ class Config:
         "sort_by": "name_asc",
         "theme": "light",
         "window_geometry": None,
-        "close_action": "hide_to_tray"  # 新增：关闭按钮行为，可选值："hide_to_tray" 或 "quit"
+        "close_action": "hide_to_tray",  # 关闭按钮行为，可选值："hide_to_tray" 或 "quit"
+        "auto_start": False,  # 新增：开机自启动
+        "pinned_notes": []  # 置顶笔记列表，存储笔记的绝对路径
     }
 
     def __init__(self, config_path="config.json"):
@@ -68,6 +70,17 @@ class Config:
         # 确保close_action是有效的
         if "close_action" not in self.data:
             self.data["close_action"] = self.DEFAULT_CONFIG["close_action"]
+
+        # 确保auto_start存在
+        if "auto_start" not in self.data:
+            self.data["auto_start"] = self.DEFAULT_CONFIG["auto_start"]
+
+        # 确保pinned_notes存在且是列表
+        if "pinned_notes" not in self.data:
+            self.data["pinned_notes"] = self.DEFAULT_CONFIG["pinned_notes"].copy()
+
+        # 如果配置中有auto_start设置，确保它应用到系统
+        self._apply_auto_start()
 
     def load_config(self):
         try:
@@ -88,6 +101,10 @@ class Config:
             os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
+
+            # 保存配置后，应用自启动设置
+            self._apply_auto_start()
+
             return True
         except Exception as e:
             print(f"保存配置失败: {e}")
@@ -145,6 +162,116 @@ class Config:
             if extension in type_list:
                 return True
         return False
+
+    def is_note_pinned(self, note_path: str) -> bool:
+        """检查笔记是否已置顶"""
+        # 使用绝对路径进行比较
+        abs_path = os.path.abspath(note_path)
+        return abs_path in self.data["pinned_notes"]
+
+    def pin_note(self, note_path: str) -> bool:
+        """置顶笔记"""
+        try:
+            abs_path = os.path.abspath(note_path)
+            if abs_path not in self.data["pinned_notes"]:
+                self.data["pinned_notes"].append(abs_path)
+                return self.save_config()
+            return True
+        except Exception as e:
+            print(f"置顶笔记失败: {e}")
+            return False
+
+    def unpin_note(self, note_path: str) -> bool:
+        """取消置顶笔记"""
+        try:
+            abs_path = os.path.abspath(note_path)
+            if abs_path in self.data["pinned_notes"]:
+                self.data["pinned_notes"].remove(abs_path)
+                return self.save_config()
+            return True
+        except Exception as e:
+            print(f"取消置顶笔记失败: {e}")
+            return False
+
+    def _apply_auto_start(self):
+        """应用自启动设置到系统"""
+        try:
+            if sys.platform == "win32":
+                self._apply_windows_auto_start()
+            elif sys.platform == "darwin":
+                # macOS自启动实现
+                self._apply_macos_auto_start()
+            elif sys.platform.startswith('linux'):
+                # Linux自启动实现
+                self._apply_linux_auto_start()
+        except Exception as e:
+            print(f"应用自启动设置失败: {e}")
+
+    def _apply_windows_auto_start(self):
+        """Windows系统设置自启动"""
+        try:
+            import winreg
+
+            # 程序路径
+            exe_path = sys.executable
+            if not exe_path.endswith('.exe'):
+                # 如果是Python脚本运行，使用脚本路径
+                exe_path = os.path.abspath(sys.argv[0])
+                if not exe_path.endswith('.exe'):
+                    # 如果不是exe文件，可能是在开发环境，不设置自启动
+                    print("警告：不是可执行文件，跳过自启动设置")
+                    return
+
+            # 构建命令行参数（启动后最小化到托盘）
+            cmd = f'"{exe_path}" --minimized'
+
+            # 注册表路径
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            app_name = "SenMingNotes"
+
+            # 打开或创建注册表键
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+            except FileNotFoundError:
+                # 如果键不存在，创建它
+                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+
+            if self.data["auto_start"]:
+                # 设置自启动
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, cmd)
+                print(f"已设置自启动: {cmd}")
+            else:
+                # 删除自启动项
+                try:
+                    winreg.DeleteValue(key, app_name)
+                    print("已删除自启动")
+                except FileNotFoundError:
+                    # 如果键不存在，忽略
+                    pass
+
+            winreg.CloseKey(key)
+        except ImportError:
+            print("无法导入winreg模块，跳过Windows自启动设置")
+        except Exception as e:
+            print(f"设置Windows自启动失败: {e}")
+
+    def _apply_macos_auto_start(self):
+        """macOS系统设置自启动"""
+        try:
+            # macOS自启动实现
+            # 这里需要根据实际情况实现
+            print("macOS自启动功能尚未实现")
+        except Exception as e:
+            print(f"设置macOS自启动失败: {e}")
+
+    def _apply_linux_auto_start(self):
+        """Linux系统设置自启动"""
+        try:
+            # Linux自启动实现
+            # 这里需要根据实际情况实现
+            print("Linux自启动功能尚未实现")
+        except Exception as e:
+            print(f"设置Linux自启动失败: {e}")
 
 
 # 文件系统扫描线程
@@ -236,7 +363,8 @@ class FileSystemScanner(QThread):
                     "created": stat.st_ctime,
                     "modified": stat.st_mtime,
                     "type": ext,
-                    "icon": file_type_info.get("icon", "folder.png")
+                    "icon": file_type_info.get("icon", "folder.png"),
+                    "is_pinned": self.config.is_note_pinned(main_file)  # 添加是否置顶标志
                 }
             return None
         except Exception as e:
@@ -268,7 +396,8 @@ class FileSystemScanner(QThread):
                     "created": stat.st_ctime,
                     "modified": stat.st_mtime,
                     "type": ext,
-                    "icon": file_type_info.get("icon", "txt.png")
+                    "icon": file_type_info.get("icon", "txt.png"),
+                    "is_pinned": self.config.is_note_pinned(item.path)  # 添加是否置顶标志
                 }
             return None
         except Exception as e:
@@ -349,7 +478,19 @@ class CustomListWidgetItem(QWidget):
             main_layout.setContentsMargins(8, 8, 8, 8)
             main_layout.setSpacing(10)
 
-            # 图标
+            # 图标区域（包含置顶图标）
+            icon_widget = QWidget()
+            icon_layout = QVBoxLayout()
+            icon_layout.setContentsMargins(0, 0, 0, 0)
+            icon_layout.setSpacing(2)
+
+            # 置顶图标（如果笔记已置顶）
+            if self.note_info.get("is_pinned", False):
+                pin_label = QLabel("📌")
+                pin_label.setAlignment(Qt.AlignCenter)
+                icon_layout.addWidget(pin_label)
+
+            # 文件图标
             icon_label = QLabel()
             icon_label.setFixedSize(48, 48)
 
@@ -375,6 +516,10 @@ class CustomListWidgetItem(QWidget):
 
             icon_label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             icon_label.setAlignment(Qt.AlignCenter)
+            icon_layout.addWidget(icon_label)
+            icon_layout.addStretch()
+
+            icon_widget.setLayout(icon_layout)
 
             # 时间信息
             time_widget = QWidget()
@@ -424,6 +569,10 @@ class CustomListWidgetItem(QWidget):
             path_label.setWordWrap(True)
             path_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
+            # 在标题后面添加置顶标记
+            if self.note_info.get("is_pinned", False):
+                title_label.setText(f"📌 {self.note_info['name']}")
+
             if self.theme == "dark":
                 title_label.setStyleSheet("color: #ffffff;")
                 path_label.setStyleSheet("color: #aaa; font-size: 9pt;")
@@ -435,7 +584,7 @@ class CustomListWidgetItem(QWidget):
             text_layout.addWidget(path_label)
             text_widget.setLayout(text_layout)
 
-            main_layout.addWidget(icon_label)
+            main_layout.addWidget(icon_widget)
             main_layout.addWidget(time_widget)
             main_layout.addWidget(text_widget, 1)
             self.setLayout(main_layout)
@@ -489,7 +638,20 @@ class GridItemWidget(QWidget):
             main_layout.setSpacing(5)
             main_layout.setAlignment(Qt.AlignCenter)
 
-            # 图标
+            # 图标区域（包含置顶图标）
+            icon_widget = QWidget()
+            icon_layout = QVBoxLayout()
+            icon_layout.setContentsMargins(0, 0, 0, 0)
+            icon_layout.setSpacing(2)
+
+            # 置顶图标（如果笔记已置顶）
+            if self.note_info.get("is_pinned", False):
+                pin_label = QLabel("📌")
+                pin_label.setAlignment(Qt.AlignCenter)
+                pin_label.setStyleSheet("font-size: 16px;")
+                icon_layout.addWidget(pin_label)
+
+            # 文件图标
             icon_paths = [
                 "icons/" + self.note_info.get('icon', 'txt.png'),
                 os.path.join(os.path.dirname(__file__), "icons", self.note_info.get('icon', 'txt.png')),
@@ -512,12 +674,18 @@ class GridItemWidget(QWidget):
             icon_label = QLabel()
             icon_label.setPixmap(pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             icon_label.setAlignment(Qt.AlignCenter)
+            icon_layout.addWidget(icon_label)
+            icon_widget.setLayout(icon_layout)
 
             # 文件名
             name_label = QLabel(self.note_info["name"])
             name_label.setAlignment(Qt.AlignCenter)
             name_label.setWordWrap(True)
             name_label.setMinimumHeight(30)
+
+            # 在文件名前添加置顶标记
+            if self.note_info.get("is_pinned", False):
+                name_label.setText(f"📌 {self.note_info['name']}")
 
             font = name_label.font()
             font.setPointSize(9)
@@ -531,7 +699,7 @@ class GridItemWidget(QWidget):
             info_label = QLabel(f"{ext.upper()} | {size_label_text}: {size_mb:.1f}MB")
             info_label.setAlignment(Qt.AlignCenter)
 
-            main_layout.addWidget(icon_label)
+            main_layout.addWidget(icon_widget)
             main_layout.addWidget(name_label)
             main_layout.addWidget(info_label)
 
@@ -609,6 +777,7 @@ class MainWindow(QMainWindow):
         self.scanner = None
         self.tray_icon = None
         self.is_minimized_to_tray = False
+        self.start_minimized = "--minimized" in sys.argv  # 检查是否通过自启动参数启动
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(self.get_logo_path()))
@@ -617,6 +786,11 @@ class MainWindow(QMainWindow):
         self.init_tray_icon()
 
         self.init_ui()
+
+        # 如果是通过自启动参数启动，则直接最小化到托盘
+        if self.start_minimized:
+            QTimer.singleShot(500, self.hide_to_tray)
+
         QTimer.singleShot(100, self.load_notes)
 
     def get_logo_path(self):
@@ -706,13 +880,15 @@ class MainWindow(QMainWindow):
                 # 显示系统托盘图标
                 self.tray_icon.show()
 
-                # 显示通知
-                self.tray_icon.showMessage(
-                    "森明笔记",
-                    "程序已最小化到托盘，点击托盘图标可恢复窗口",
-                    QSystemTrayIcon.Information,
-                    3000
-                )
+                # 如果是通过自启动启动，不显示通知
+                if not self.start_minimized:
+                    # 显示通知
+                    self.tray_icon.showMessage(
+                        "森明笔记",
+                        "程序已最小化到托盘，点击托盘图标可恢复窗口",
+                        QSystemTrayIcon.Information,
+                        3000
+                    )
 
             self.is_minimized_to_tray = True
         except Exception as e:
@@ -1082,51 +1258,115 @@ class MainWindow(QMainWindow):
     def display_notes(self, notes):
         try:
             if self.current_view == "list":
-                self.notes_list.clear()
+                self.refresh_list_view(notes)
             else:
+                self.refresh_grid_view(notes)
+        except Exception as e:
+            print(f"显示笔记错误: {e}")
+            traceback.print_exc()
+
+    def refresh_list_view(self, notes):
+        """刷新列表视图"""
+        try:
+            if not notes:
+                self.notes_list.clear()
+                return
+
+            # 分离置顶和非置顶笔记
+            pinned_notes = []
+            unpinned_notes = []
+
+            for note in notes:
+                if note.get("is_pinned", False):
+                    pinned_notes.append(note)
+                else:
+                    unpinned_notes.append(note)
+
+            # 分别排序
+            sorted_pinned = self.sort_notes(pinned_notes)
+            sorted_unpinned = self.sort_notes(unpinned_notes)
+
+            # 合并列表：置顶笔记在前，非置顶笔记在后
+            sorted_notes = sorted_pinned + sorted_unpinned
+
+            # 清空列表
+            self.notes_list.clear()
+
+            # 重新添加所有笔记
+            for note in sorted_notes:
+                item_widget = CustomListWidgetItem(note, self.current_theme)
+                item = QListWidgetItem(self.notes_list)
+                item.setSizeHint(item_widget.sizeHint())
+                item.setData(Qt.UserRole, note)
+                self.notes_list.addItem(item)
+                self.notes_list.setItemWidget(item, item_widget)
+
+        except Exception as e:
+            print(f"刷新列表视图错误: {e}")
+            traceback.print_exc()
+
+    def refresh_grid_view(self, notes):
+        """刷新网格视图"""
+        try:
+            if not notes:
+                # 清空现有网格
                 for i in reversed(range(self.grid_layout.count())):
                     item = self.grid_layout.itemAt(i)
                     if item:
                         widget = item.widget()
                         if widget:
                             widget.deleteLater()
-
-            if not notes:
                 return
 
-            sorted_notes = self.sort_notes(notes)
+            # 分离置顶和非置顶笔记
+            pinned_notes = []
+            unpinned_notes = []
 
-            if self.current_view == "list":
-                for note in sorted_notes:
-                    item_widget = CustomListWidgetItem(note, self.current_theme)
-                    item = QListWidgetItem(self.notes_list)
-                    item.setSizeHint(item_widget.sizeHint())
-                    item.setData(Qt.UserRole, note)
-                    self.notes_list.addItem(item)
-                    self.notes_list.setItemWidget(item, item_widget)
-            else:
-                container_width = self.grid_scroll_area.viewport().width() - 30
-                item_width = 180
-                items_per_row = max(1, container_width // item_width)
+            for note in notes:
+                if note.get("is_pinned", False):
+                    pinned_notes.append(note)
+                else:
+                    unpinned_notes.append(note)
 
-                row = 0
-                col = 0
+            # 分别排序
+            sorted_pinned = self.sort_notes(pinned_notes)
+            sorted_unpinned = self.sort_notes(unpinned_notes)
 
-                for note in sorted_notes:
-                    item_widget = GridItemWidget(note, self.current_theme)
-                    item_widget.clicked.connect(self.open_note_from_grid)
-                    item_widget.rightClicked.connect(lambda n=note, pos=None: self.show_grid_context_menu(n, pos))
+            # 合并列表：置顶笔记在前，非置顶笔记在后
+            sorted_notes = sorted_pinned + sorted_unpinned
 
-                    self.grid_layout.addWidget(item_widget, row, col)
+            # 清空现有网格
+            for i in reversed(range(self.grid_layout.count())):
+                item = self.grid_layout.itemAt(i)
+                if item:
+                    widget = item.widget()
+                    if widget:
+                        widget.deleteLater()
 
-                    col += 1
-                    if col >= items_per_row:
-                        col = 0
-                        row += 1
+            # 重新创建网格
+            container_width = self.grid_scroll_area.viewport().width() - 30
+            item_width = 180
+            items_per_row = max(1, container_width // item_width)
 
-                self.grid_layout.setRowStretch(row + 1, 1)
+            row = 0
+            col = 0
+
+            for note in sorted_notes:
+                item_widget = GridItemWidget(note, self.current_theme)
+                item_widget.clicked.connect(self.open_note_from_grid)
+                item_widget.rightClicked.connect(lambda n=note, pos=None: self.show_grid_context_menu(n, pos))
+
+                self.grid_layout.addWidget(item_widget, row, col)
+
+                col += 1
+                if col >= items_per_row:
+                    col = 0
+                    row += 1
+
+            self.grid_layout.setRowStretch(row + 1, 1)
+
         except Exception as e:
-            print(f"显示笔记错误: {e}")
+            print(f"刷新网格视图错误: {e}")
             traceback.print_exc()
 
     def open_note_from_list(self, item):
@@ -1260,14 +1500,72 @@ class MainWindow(QMainWindow):
             open_action = menu.addAction("打开")
             show_in_explorer = menu.addAction("在文件资源管理器中显示")
 
+            # 添加置顶/取消置顶菜单项
+            if note_info.get("is_pinned", False):
+                pin_action = menu.addAction("取消置顶")
+            else:
+                pin_action = menu.addAction("置顶")
+
             action = menu.exec_(position)
 
             if action == open_action:
                 self.open_note_internal(note_info)
             elif action == show_in_explorer:
                 self.show_in_explorer(note_info)
+            elif action == pin_action:
+                self.toggle_pin_status(note_info)
         except Exception as e:
             print(f"显示右键菜单错误: {e}")
+
+    def toggle_pin_status(self, note_info):
+        """切换笔记的置顶状态"""
+        try:
+            file_path = note_info["path"]
+
+            if note_info.get("is_pinned", False):
+                # 当前是置顶状态，取消置顶
+                if self.config.unpin_note(file_path):
+                    note_info["is_pinned"] = False
+                    self.statusBar().showMessage(f"已取消置顶: {note_info['name']}")
+
+                    # 更新所有笔记的置顶状态
+                    self.update_all_notes_pinned_status()
+
+                    # 刷新显示
+                    notes = self.filtered_notes if self.filtered_notes else self.current_notes
+                    self.display_notes(notes)
+                else:
+                    QMessageBox.warning(self, "错误", "取消置顶失败")
+            else:
+                # 当前不是置顶状态，置顶
+                if self.config.pin_note(file_path):
+                    note_info["is_pinned"] = True
+                    self.statusBar().showMessage(f"已置顶: {note_info['name']}")
+
+                    # 更新所有笔记的置顶状态
+                    self.update_all_notes_pinned_status()
+
+                    # 刷新显示
+                    notes = self.filtered_notes if self.filtered_notes else self.current_notes
+                    self.display_notes(notes)
+                else:
+                    QMessageBox.warning(self, "错误", "置顶失败")
+        except Exception as e:
+            print(f"切换置顶状态错误: {e}")
+            QMessageBox.warning(self, "错误", f"操作失败: {str(e)}")
+
+    def update_all_notes_pinned_status(self):
+        """更新所有笔记的置顶状态"""
+        try:
+            # 更新当前笔记列表中的置顶状态
+            for note in self.current_notes:
+                note["is_pinned"] = self.config.is_note_pinned(note["path"])
+
+            # 更新过滤后的笔记列表中的置顶状态
+            for note in self.filtered_notes:
+                note["is_pinned"] = self.config.is_note_pinned(note["path"])
+        except Exception as e:
+            print(f"更新笔记置顶状态错误: {e}")
 
     def show_in_explorer(self, note_info):
         """在文件资源管理器中显示文件（选中文件）"""
@@ -1342,7 +1640,7 @@ class MainWindow(QMainWindow):
 
     def open_settings(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, \
-            QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox, QComboBox
+            QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox, QComboBox, QCheckBox
         from PyQt5.QtCore import Qt
 
         class SettingsDialog(QDialog):
@@ -1355,7 +1653,7 @@ class MainWindow(QMainWindow):
 
             def init_ui(self):
                 self.setWindowTitle("设置 - 森明笔记")
-                self.setFixedSize(600, 550)  # 增加高度以容纳新的设置项
+                self.setFixedSize(600, 500)
 
                 layout = QVBoxLayout()
 
@@ -1374,12 +1672,21 @@ class MainWindow(QMainWindow):
 
                 folder_group.setLayout(folder_layout)
 
-                # 新增：关闭按钮行为设置
+                # 程序行为设置
                 behavior_group = QGroupBox("程序行为设置")
                 behavior_layout = QVBoxLayout()
 
-                behavior_hbox = QHBoxLayout()
-                behavior_hbox.addWidget(QLabel("关闭窗口按钮行为:"))
+                # 第一行：自启动设置
+                auto_start_hbox = QHBoxLayout()
+                self.auto_start_checkbox = QCheckBox("开机自启动")
+                self.auto_start_checkbox.setChecked(self.config.data.get("auto_start", False))
+                auto_start_hbox.addWidget(self.auto_start_checkbox)
+                auto_start_hbox.addStretch()
+                behavior_layout.addLayout(auto_start_hbox)
+
+                # 第二行：关闭窗口按钮行为
+                close_action_hbox = QHBoxLayout()
+                close_action_hbox.addWidget(QLabel("关闭窗口按钮行为:"))
 
                 self.close_action_combo = QComboBox()
                 self.close_action_combo.addItems(["隐藏到托盘", "直接退出程序"])
@@ -1391,10 +1698,10 @@ class MainWindow(QMainWindow):
                 else:
                     self.close_action_combo.setCurrentIndex(1)
 
-                behavior_hbox.addWidget(self.close_action_combo)
-                behavior_hbox.addStretch()
+                close_action_hbox.addWidget(self.close_action_combo)
+                close_action_hbox.addStretch()
+                behavior_layout.addLayout(close_action_hbox)
 
-                behavior_layout.addLayout(behavior_hbox)
                 behavior_group.setLayout(behavior_layout)
 
                 type_group = QGroupBox("文件类型设置")
@@ -1461,7 +1768,7 @@ class MainWindow(QMainWindow):
                         QLabel {
                             color: #ffffff;
                         }
-                        QLineEdit, QTableWidget, QComboBox {
+                        QLineEdit, QTableWidget, QComboBox, QCheckBox {
                             background-color: #3c3c3c;
                             color: #ffffff;
                             border: 1px solid #555;
@@ -1499,7 +1806,7 @@ class MainWindow(QMainWindow):
                         QLabel {
                             color: #000000;
                         }
-                        QLineEdit, QTableWidget, QComboBox {
+                        QLineEdit, QTableWidget, QComboBox, QCheckBox {
                             background-color: #ffffff;
                             color: #000000;
                             border: 1px solid #ccc;
@@ -1554,6 +1861,9 @@ class MainWindow(QMainWindow):
 
             def save_all(self):
                 self.config.data["notes_folder"] = self.folder_edit.text()
+
+                # 保存自启动设置
+                self.config.data["auto_start"] = self.auto_start_checkbox.isChecked()
 
                 # 保存关闭按钮行为设置
                 close_action_index = self.close_action_combo.currentIndex()
@@ -1623,7 +1933,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         try:
-            if self.current_view == "grid" and hasattr(self, 'grid_layout'):
+            if self.current_view == "grid":
                 notes = self.filtered_notes if self.filtered_notes else self.current_notes
                 if notes:
                     self.display_notes(notes)
