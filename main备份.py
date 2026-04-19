@@ -478,17 +478,11 @@ class CustomListWidgetItem(QWidget):
             main_layout.setContentsMargins(8, 8, 8, 8)
             main_layout.setSpacing(10)
 
-            # 图标区域（包含置顶图标）
+            # 图标区域
             icon_widget = QWidget()
             icon_layout = QVBoxLayout()
             icon_layout.setContentsMargins(0, 0, 0, 0)
-            icon_layout.setSpacing(2)
-
-            # 置顶图标（如果笔记已置顶）
-            if self.note_info.get("is_pinned", False):
-                pin_label = QLabel("📌")
-                pin_label.setAlignment(Qt.AlignCenter)
-                icon_layout.addWidget(pin_label)
+            icon_layout.setSpacing(0)
 
             # 文件图标
             icon_label = QLabel()
@@ -517,7 +511,6 @@ class CustomListWidgetItem(QWidget):
             icon_label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             icon_label.setAlignment(Qt.AlignCenter)
             icon_layout.addWidget(icon_label)
-            icon_layout.addStretch()
 
             icon_widget.setLayout(icon_layout)
 
@@ -557,7 +550,13 @@ class CustomListWidgetItem(QWidget):
             text_layout.setContentsMargins(0, 0, 0, 0)
             text_layout.setSpacing(3)
 
-            title_label = QLabel(self.note_info["name"])
+            # 在标题前面添加置顶标记
+            if self.note_info.get("is_pinned", False):
+                title_text = f"📌 {self.note_info['name']}"
+            else:
+                title_text = self.note_info["name"]
+
+            title_label = QLabel(title_text)
             title_label.setWordWrap(True)
             title_font = title_label.font()
             title_font.setPointSize(10)
@@ -568,10 +567,6 @@ class CustomListWidgetItem(QWidget):
             path_label = QLabel(self.note_info["path"])
             path_label.setWordWrap(True)
             path_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-
-            # 在标题后面添加置顶标记
-            if self.note_info.get("is_pinned", False):
-                title_label.setText(f"📌 {self.note_info['name']}")
 
             if self.theme == "dark":
                 title_label.setStyleSheet("color: #ffffff;")
@@ -638,18 +633,11 @@ class GridItemWidget(QWidget):
             main_layout.setSpacing(5)
             main_layout.setAlignment(Qt.AlignCenter)
 
-            # 图标区域（包含置顶图标）
+            # 图标区域
             icon_widget = QWidget()
             icon_layout = QVBoxLayout()
             icon_layout.setContentsMargins(0, 0, 0, 0)
-            icon_layout.setSpacing(2)
-
-            # 置顶图标（如果笔记已置顶）
-            if self.note_info.get("is_pinned", False):
-                pin_label = QLabel("📌")
-                pin_label.setAlignment(Qt.AlignCenter)
-                pin_label.setStyleSheet("font-size: 16px;")
-                icon_layout.addWidget(pin_label)
+            icon_layout.setSpacing(0)
 
             # 文件图标
             icon_paths = [
@@ -677,15 +665,16 @@ class GridItemWidget(QWidget):
             icon_layout.addWidget(icon_label)
             icon_widget.setLayout(icon_layout)
 
-            # 文件名
-            name_label = QLabel(self.note_info["name"])
+            # 文件名（在标题前面添加置顶标记）
+            if self.note_info.get("is_pinned", False):
+                name_text = f"📌 {self.note_info['name']}"
+            else:
+                name_text = self.note_info["name"]
+
+            name_label = QLabel(name_text)
             name_label.setAlignment(Qt.AlignCenter)
             name_label.setWordWrap(True)
             name_label.setMinimumHeight(30)
-
-            # 在文件名前添加置顶标记
-            if self.note_info.get("is_pinned", False):
-                name_label.setText(f"📌 {self.note_info['name']}")
 
             font = name_label.font()
             font.setPointSize(9)
@@ -1653,7 +1642,8 @@ class MainWindow(QMainWindow):
 
             def init_ui(self):
                 self.setWindowTitle("设置 - 森明笔记")
-                self.setFixedSize(600, 500)
+                self.resize(700, 600)  # 设置为可调整大小，初始大小700x600
+                self.setMinimumSize(600, 500)  # 设置最小大小
 
                 layout = QVBoxLayout()
 
@@ -1674,19 +1664,18 @@ class MainWindow(QMainWindow):
 
                 # 程序行为设置
                 behavior_group = QGroupBox("程序行为设置")
-                behavior_layout = QVBoxLayout()
+                behavior_layout = QHBoxLayout()
 
-                # 第一行：自启动设置
-                auto_start_hbox = QHBoxLayout()
+                # 自启动设置放在左边
                 self.auto_start_checkbox = QCheckBox("开机自启动")
                 self.auto_start_checkbox.setChecked(self.config.data.get("auto_start", False))
-                auto_start_hbox.addWidget(self.auto_start_checkbox)
-                auto_start_hbox.addStretch()
-                behavior_layout.addLayout(auto_start_hbox)
+                behavior_layout.addWidget(self.auto_start_checkbox)
 
-                # 第二行：关闭窗口按钮行为
-                close_action_hbox = QHBoxLayout()
-                close_action_hbox.addWidget(QLabel("关闭窗口按钮行为:"))
+                # 添加一些间距
+                behavior_layout.addSpacing(20)
+
+                # 关闭窗口按钮行为
+                behavior_layout.addWidget(QLabel("关闭窗口按钮行为:"))
 
                 self.close_action_combo = QComboBox()
                 self.close_action_combo.addItems(["隐藏到托盘", "直接退出程序"])
@@ -1698,9 +1687,8 @@ class MainWindow(QMainWindow):
                 else:
                     self.close_action_combo.setCurrentIndex(1)
 
-                close_action_hbox.addWidget(self.close_action_combo)
-                close_action_hbox.addStretch()
-                behavior_layout.addLayout(close_action_hbox)
+                behavior_layout.addWidget(self.close_action_combo)
+                behavior_layout.addStretch()
 
                 behavior_group.setLayout(behavior_layout)
 
@@ -1711,6 +1699,9 @@ class MainWindow(QMainWindow):
                 self.type_table.setColumnCount(3)
                 self.type_table.setHorizontalHeaderLabels(["扩展名", "图标", "外部工具路径"])
                 self.type_table.setAlternatingRowColors(True)
+                self.type_table.horizontalHeader().setStretchLastSection(True)  # 最后一列拉伸
+                self.type_table.setSelectionBehavior(QTableWidget.SelectRows)  # 整行选择
+                self.type_table.setSelectionMode(QTableWidget.SingleSelection)  # 单选
 
                 self.load_file_types_to_table()
 
@@ -1724,7 +1715,7 @@ class MainWindow(QMainWindow):
                 btn_layout.addWidget(remove_btn)
                 btn_layout.addStretch()
 
-                type_layout.addWidget(self.type_table)
+                type_layout.addWidget(self.type_table, 1)  # 添加伸缩因子，让表格可以随着窗口大小调整
                 type_layout.addLayout(btn_layout)
                 type_group.setLayout(type_layout)
 
@@ -1739,8 +1730,8 @@ class MainWindow(QMainWindow):
                 button_layout.addWidget(cancel_btn)
 
                 layout.addWidget(folder_group)
-                layout.addWidget(behavior_group)  # 添加行为设置组
-                layout.addWidget(type_group)
+                layout.addWidget(behavior_group)
+                layout.addWidget(type_group, 1)  # 添加伸缩因子，让type_group可以随着窗口大小调整
                 layout.addLayout(button_layout)
 
                 self.setLayout(layout)
@@ -1783,6 +1774,18 @@ class MainWindow(QMainWindow):
                         QPushButton:hover {
                             background-color: #4c4c4c;
                         }
+                        QHeaderView::section {
+                            background-color: #3c3c3c;
+                            color: white;
+                            padding: 5px;
+                            border: 1px solid #555;
+                        }
+                        QTableWidget::item {
+                            padding: 5px;
+                        }
+                        QTableWidget::item:selected {
+                            background-color: #4c4c4c;
+                        }
                     """)
                 else:
                     self.setStyleSheet("""
@@ -1819,6 +1822,18 @@ class MainWindow(QMainWindow):
                             padding: 5px 10px;
                         }
                         QPushButton:hover {
+                            background-color: #f0f0f0;
+                        }
+                        QHeaderView::section {
+                            background-color: #ffffff;
+                            color: black;
+                            padding: 5px;
+                            border: 1px solid #ccc;
+                        }
+                        QTableWidget::item {
+                            padding: 5px;
+                        }
+                        QTableWidget::item:selected {
                             background-color: #f0f0f0;
                         }
                     """)

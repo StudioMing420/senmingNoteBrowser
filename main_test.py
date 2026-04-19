@@ -804,7 +804,11 @@ class MainWindow(QMainWindow):
             # 设置托盘图标
             icon_path = self.get_logo_path()
             if icon_path:
-                self.tray_icon.setIcon(QIcon(icon_path))
+                tray_icon_obj = QIcon(icon_path)
+                if tray_icon_obj.isNull():
+                    # 如果图标无效，使用默认图标
+                    tray_icon_obj = self.style().standardIcon(QStyle.SP_ComputerIcon)
+                self.tray_icon.setIcon(tray_icon_obj)
             else:
                 # 如果没有图标，使用默认的图标
                 self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
@@ -831,6 +835,7 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print(f"初始化托盘图标错误: {e}")
+            self.tray_icon = None
 
     def tray_icon_activated(self, reason):
         """托盘图标激活事件处理"""
@@ -863,21 +868,28 @@ class MainWindow(QMainWindow):
     def hide_to_tray(self):
         """隐藏窗口到托盘"""
         try:
+            # 确保托盘图标存在且有效
+            if not self.tray_icon:
+                self.init_tray_icon()
+
+            if not self.tray_icon:
+                print("错误：无法创建托盘图标")
+                return
+
             self.hide()  # 隐藏主窗口
 
-            if self.tray_icon:
-                # 显示系统托盘图标
-                self.tray_icon.show()
+            # 显示系统托盘图标
+            self.tray_icon.show()
 
-                # 如果是通过自启动启动，不显示通知
-                if not self.start_minimized:
-                    # 显示通知
-                    self.tray_icon.showMessage(
-                        "森明笔记",
-                        "程序已最小化到托盘，点击托盘图标可恢复窗口",
-                        QSystemTrayIcon.Information,
-                        3000
-                    )
+            # 如果是通过自启动启动，不显示通知
+            if not self.start_minimized:
+                # 显示通知
+                self.tray_icon.showMessage(
+                    "森明笔记",
+                    "程序已最小化到托盘，点击托盘图标可恢复窗口",
+                    QSystemTrayIcon.Information,
+                    3000
+                )
 
             self.is_minimized_to_tray = True
         except Exception as e:
