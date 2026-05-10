@@ -866,14 +866,16 @@ class MainWindow(QMainWindow):
             print(f"从托盘恢复错误: {e}")
 
     def hide_to_tray(self):
-        """隐藏窗口到托盘"""
+        """隐藏窗口到托盘（修复：增加托盘有效性检查和重试，移除通知弹窗）"""
         try:
             # 确保托盘图标存在且有效
             if not self.tray_icon:
                 self.init_tray_icon()
 
-            if not self.tray_icon:
-                print("错误：无法创建托盘图标")
+            # 如果托盘图标仍然无效（例如系统托盘不可用），则尝试等待后重试一次
+            if not self.tray_icon or not self.tray_icon.isSystemTrayAvailable():
+                print("托盘图标无效或系统托盘不可用，尝试重试...")
+                QTimer.singleShot(500, self.hide_to_tray)
                 return
 
             self.hide()  # 隐藏主窗口
@@ -881,15 +883,8 @@ class MainWindow(QMainWindow):
             # 显示系统托盘图标
             self.tray_icon.show()
 
-            # 如果是通过自启动启动，不显示通知
-            if not self.start_minimized:
-                # 显示通知
-                self.tray_icon.showMessage(
-                    "森明笔记",
-                    "程序已最小化到托盘，点击托盘图标可恢复窗口",
-                    QSystemTrayIcon.Information,
-                    3000
-                )
+            # 已移除：不再显示“程序已最小化到托盘”的通知弹窗
+            # （用户要求去掉该通知）
 
             self.is_minimized_to_tray = True
         except Exception as e:

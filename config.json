@@ -20,25 +20,17 @@
     "mp4,avi,mkv,mov": {
       "icon": "video.png",
       "external": ""
-    },
-    "mp3,wav,flac": {
-      "icon": "audio.png",
-      "external": ""
-    },
-    "pdf": {
-      "icon": "pdf.png",
-      "external": ""
     }
   },
-  "view_mode": "list",
+  "view_mode": "grid",
   "sort_by": "mod_desc",
   "text_encoding": "utf-8",
   "html_js_enabled": true,
   "html_cookies_enabled": true,
   "recent_folders": [],
-  "window_geometry": "01d9d0cb000300000000015e0000004e00000539000003b40000015f0000007400000538000003b3000000000000000007800000015f0000007400000538000003b3",
+  "window_geometry": "01d9d0cb00030000fffffffffffffff700000780000004140000015f0000007400000538000003b300000000020000000780000000000000001d0000077f00000413",
   "theme": "light",
-  "close_action": "quit",
+  "close_action": "hide_to_tray",
   "pinned_notes": [
     "D:\\MyLife\\AllTimeLine\\追剧-追游.txt"
   ],
