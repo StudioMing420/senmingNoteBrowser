@@ -23,16 +23,16 @@
     }
   },
   "view_mode": "grid",
-  "sort_by": "mod_desc",
+  "sort_by": "type_desc",
   "text_encoding": "utf-8",
   "html_js_enabled": true,
   "html_cookies_enabled": true,
   "recent_folders": [],
-  "window_geometry": "01d9d0cb00030000fffffffffffffff700000780000004140000015f0000007400000538000003b300000000020000000780000000000000001d0000077f00000413",
+  "window_geometry": "01d9d0cb00030000000000b8000000c4000005d40000036c000000b9000000e0000005d30000036b00000000000000000780000000b9000000e0000005d30000036b",
   "theme": "light",
   "close_action": "hide_to_tray",
   "pinned_notes": [
     "D:\\MyLife\\AllTimeLine\\追剧-追游.txt"
   ],
-  "auto_start": true
+  "auto_start": false
 }
