@@ -11,6 +11,8 @@ import json
 import time
 import traceback
 import subprocess
+import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -574,6 +576,354 @@ class GridItemWidget(QWidget):
             pass
 
 
+# ==================== MD冗余检查对话框（PyQt5重写） ====================
+class MDRedundantDialog(QDialog):
+    """检查MD文件中未引用的图片，支持移动/删除"""
+    # 常见图片扩展名
+    IMAGE_EXTENSIONS = {
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico',
+        '.tiff', '.tif', '.jfif', '.pjpeg', '.pjp', '.apng', '.avif',
+        '.heif', '.heic', '.raw', '.cr2', '.nef', '.orf', '.sr2',
+        '.psd', '.eps', '.pcx', '.tga', '.wdp', '.hdp', '.jxr'
+    }
+
+    def __init__(self, config: Config, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.unreferenced_images = []    # 未引用图片的绝对路径列表
+        self.setWindowTitle("MD未引用图片检查 - 森明笔记")
+        self.setMinimumSize(700, 500)
+        self.init_ui()
+        # 默认填充笔记总文件夹路径
+        self.md_path_edit.setText(self.config.data.get("notes_folder", ""))
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+
+        # 第一行：MD文件路径
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("MD文件/文件夹:"))
+        self.md_path_edit = QLineEdit()
+        row1.addWidget(self.md_path_edit, 1)
+        btn_browse_file = QPushButton("选择文件")
+        btn_browse_file.clicked.connect(self.browse_md_file)
+        row1.addWidget(btn_browse_file)
+        btn_browse_folder = QPushButton("扫描文件夹")
+        btn_browse_folder.clicked.connect(self.browse_folder)
+        row1.addWidget(btn_browse_folder)
+        layout.addLayout(row1)
+
+        # 第二行：目标目录
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("目标目录:"))
+        self.dest_edit = QLineEdit()
+        row2.addWidget(self.dest_edit, 1)
+        btn_browse_dest = QPushButton("选择目录")
+        btn_browse_dest.clicked.connect(self.browse_dest)
+        row2.addWidget(btn_browse_dest)
+        layout.addLayout(row2)
+
+        # 第三行：功能按钮
+        row3 = QHBoxLayout()
+        self.btn_check = QPushButton("检查")
+        self.btn_check.clicked.connect(self.check_md)
+        row3.addWidget(self.btn_check)
+        self.btn_move = QPushButton("移动")
+        self.btn_move.clicked.connect(self.move_images)
+        row3.addWidget(self.btn_move)
+        self.btn_delete = QPushButton("删除")
+        self.btn_delete.clicked.connect(self.delete_images)
+        row3.addWidget(self.btn_delete)
+        row3.addStretch()
+        layout.addLayout(row3)
+
+        # 第四行：日志显示
+        self.text_display = QPlainTextEdit()
+        self.text_display.setReadOnly(True)
+        layout.addWidget(self.text_display)
+
+        # 应用主题
+        self.apply_theme()
+
+    def apply_theme(self):
+        # 从主窗口获取主题
+        theme = self.config.data.get("theme", "light")
+        if theme == "dark":
+            self.setStyleSheet("""
+                QDialog { background-color: #2b2b2b; color: #ffffff; }
+                QLineEdit, QPlainTextEdit { background-color: #3c3c3c; border: 1px solid #555; color: #ffffff; }
+                QPushButton { background-color: #3c3c3c; border: 1px solid #555; padding: 5px 10px; color: #ffffff; }
+                QPushButton:hover { background-color: #4c4c4c; }
+                QLabel { color: #ffffff; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QDialog { background-color: #f5f5f5; color: #000000; }
+                QLineEdit, QPlainTextEdit { background-color: #ffffff; border: 1px solid #ccc; }
+                QPushButton { background-color: #ffffff; border: 1px solid #ccc; padding: 5px 10px; }
+                QPushButton:hover { background-color: #f0f0f0; }
+                QLabel { color: #000000; }
+            """)
+
+    def _log(self, msg):
+        self.text_display.appendPlainText(msg)
+
+    def _clear_log(self):
+        self.text_display.clear()
+
+    def _is_image_file(self, filename):
+        _, ext = os.path.splitext(filename)
+        return ext.lower() in self.IMAGE_EXTENSIONS
+
+    def _extract_referenced_basenames(self, md_content):
+        """从Markdown内容中提取所有引用的图片文件名（不含路径）"""
+        basenames = set()
+        # 匹配 Markdown 图片语法: ![alt](url)
+        md_pattern = r'!\[.*?\]\((.*?)\)'
+        # 匹配 HTML img 标签
+        html_pattern = r'<img[^>]+src=["\']([^"\']+)["\']'
+
+        urls = re.findall(md_pattern, md_content, re.IGNORECASE)
+        urls += re.findall(html_pattern, md_content, re.IGNORECASE)
+
+        for url in urls:
+            if url.startswith(('http://', 'https://', '//')):
+                continue
+            clean = url.split('?')[0].split('#')[0]
+            basename = os.path.basename(clean)
+            if basename:
+                basenames.add(basename)
+        return basenames
+
+    def browse_md_file(self):
+        """选择单个MD文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择Markdown文件", "",
+            "Markdown文件 (*.md);;所有文件 (*.*)"
+        )
+        if file_path:
+            self.md_path_edit.setText(file_path)
+
+    def browse_folder(self):
+        """选择文件夹（扫描模式）"""
+        dir_path = QFileDialog.getExistingDirectory(self, "选择包含Markdown文件的文件夹")
+        if dir_path:
+            self.md_path_edit.setText(dir_path)
+
+    def browse_dest(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "选择目标文件夹")
+        if dir_path:
+            self.dest_edit.setText(dir_path)
+
+    def check_md(self):
+        """检查MD文件未引用的图片（支持单文件或文件夹扫描）"""
+        self._clear_log()
+        self.unreferenced_images = []
+
+        path = self.md_path_edit.text().strip()
+        if not path:
+            QMessageBox.warning(self, "提示", "请输入或选择一个MD文件或文件夹")
+            return
+
+        # 判断是文件夹还是文件
+        if os.path.isdir(path):
+            self._check_folder(path)
+        elif os.path.isfile(path) and path.lower().endswith('.md'):
+            self._check_single_file(path)
+        else:
+            QMessageBox.warning(self, "提示", "路径无效，请输入有效的 .md 文件路径或文件夹路径")
+
+    def _check_single_file(self, md_path):
+        """检查单个MD文件"""
+        self._log(f"检查文件: {md_path}")
+        md_dir = os.path.dirname(os.path.abspath(md_path))
+        md_basename = os.path.basename(md_path)
+        prefix = os.path.splitext(md_basename)[0]
+        assets_dir = os.path.join(md_dir, prefix + '.assets')
+
+        if not os.path.isdir(assets_dir):
+            self._log(f"未找到图片文件夹: {assets_dir}")
+            self._log("没有图片可检查。")
+            return
+
+        try:
+            with open(md_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"读取MD文件失败: {e}")
+            return
+
+        referenced = self._extract_referenced_basenames(content)
+        try:
+            all_files = os.listdir(assets_dir)
+        except Exception as e:
+            self._log(f"无法访问图片文件夹: {e}")
+            return
+
+        image_files = [f for f in all_files if self._is_image_file(f)]
+        unreferenced = [img for img in image_files if img not in referenced]
+
+        if not unreferenced:
+            self._log("所有图片均已被引用，没有未引用图片。")
+        else:
+            self._log(f"未引用的图片 ({len(unreferenced)} 个):")
+            for img in unreferenced:
+                self._log(f"  {img}")
+            self.unreferenced_images = [os.path.join(assets_dir, img) for img in unreferenced]
+
+    def _check_folder(self, folder):
+        """扫描文件夹内所有MD文件，汇总未引用图片"""
+        self._log(f"开始扫描文件夹: {folder}")
+        md_files = []
+        for root, dirs, files in os.walk(folder):
+            for file in files:
+                if file.lower().endswith('.md'):
+                    md_files.append(os.path.join(root, file))
+
+        if not md_files:
+            self._log("未找到任何 .md 文件。")
+            return
+
+        self._log(f"共找到 {len(md_files)} 个 .md 文件\n")
+        total_unreferenced = []
+
+        for md_path in md_files:
+            self._log(f"正在检查: {md_path}")
+            md_dir = os.path.dirname(md_path)
+            md_basename = os.path.basename(md_path)
+            prefix = os.path.splitext(md_basename)[0]
+            assets_dir = os.path.join(md_dir, prefix + '.assets')
+
+            if not os.path.isdir(assets_dir):
+                self._log(f"  未找到图片文件夹: {assets_dir}，跳过")
+                continue
+
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except Exception as e:
+                self._log(f"  读取失败: {e}，跳过")
+                continue
+
+            referenced = self._extract_referenced_basenames(content)
+            try:
+                all_files = os.listdir(assets_dir)
+            except Exception as e:
+                self._log(f"  无法访问图片文件夹: {e}，跳过")
+                continue
+
+            image_files = [f for f in all_files if self._is_image_file(f)]
+            unreferenced = [img for img in image_files if img not in referenced]
+
+            if not unreferenced:
+                self._log(f"  所有图片均已被引用")
+            else:
+                self._log(f"  未引用图片 ({len(unreferenced)} 个):")
+                for img in unreferenced:
+                    self._log(f"    {img}")
+                for img in unreferenced:
+                    total_unreferenced.append(os.path.join(assets_dir, img))
+
+        self._log("\n===== 汇总结果 =====")
+        if total_unreferenced:
+            self._log(f"总计发现未引用图片 {len(total_unreferenced)} 个，可以进行移动或删除操作。")
+        else:
+            self._log("所有 .md 文件的图片均被引用，没有未引用图片。")
+        self.unreferenced_images = total_unreferenced
+
+    def move_images(self):
+        """移动未引用图片到目标目录（带确认列表）"""
+        if not self.unreferenced_images:
+            if self.text_display.toPlainText().strip() == "":
+                QMessageBox.warning(self, "提示", "请先执行“检查”操作")
+            else:
+                QMessageBox.information(self, "提示", "没有未引用的图片可移动")
+            return
+
+        dest = self.dest_edit.text().strip()
+        if not dest:
+            dest = r'C:\Users\Administrator\Downloads\md图未引用图片转移站'
+            self._log(f"目标目录为空，将使用默认路径: {dest}")
+
+        dest = os.path.abspath(dest)
+        try:
+            os.makedirs(dest, exist_ok=True)
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"无法创建目标目录: {e}")
+            return
+
+        # 准备文件列表
+        file_list = "\n".join(os.path.basename(p) for p in self.unreferenced_images)
+        msg_box = QMessageBox(QMessageBox.Question, "确认移动",
+                              f"以下 {len(self.unreferenced_images)} 个未引用图片将被移动到:\n{dest}\n\n确定继续吗？",
+                              QMessageBox.Yes | QMessageBox.No, self)
+        msg_box.setDetailedText(file_list)
+        if msg_box.exec_() != QMessageBox.Yes:
+            return
+
+        self._log("\n开始移动...")
+        success_count = 0
+        for src in self.unreferenced_images:
+            if not os.path.isfile(src):
+                self._log(f"[跳过] 文件不存在: {src}")
+                continue
+            filename = os.path.basename(src)
+            dst = os.path.join(dest, filename)
+            try:
+                if os.path.exists(dst):
+                    base, ext = os.path.splitext(filename)
+                    dst = os.path.join(dest, f"{base}_副本{ext}")
+                shutil.move(src, dst)
+                self._log(f"已移动: {filename} -> {dst}")
+                success_count += 1
+            except Exception as e:
+                self._log(f"移动失败 {filename}: {e}")
+
+        self._log(f"\n移动完成，共成功移动 {success_count}/{len(self.unreferenced_images)} 个文件。")
+        self.unreferenced_images = []
+
+    def delete_images(self):
+        """删除未引用图片（两次确认）"""
+        if not self.unreferenced_images:
+            if self.text_display.toPlainText().strip() == "":
+                QMessageBox.warning(self, "提示", "请先执行“检查”操作")
+            else:
+                QMessageBox.information(self, "提示", "没有未引用的图片可删除")
+            return
+
+        # 第一次确认：显示列表
+        file_list = "\n".join(os.path.basename(p) for p in self.unreferenced_images)
+        msg_box = QMessageBox(QMessageBox.Question, "确认删除 - 第一步",
+                              "以下图片将被删除，确定继续吗？",
+                              QMessageBox.Yes | QMessageBox.No, self)
+        msg_box.setDetailedText(file_list)
+        if msg_box.exec_() != QMessageBox.Yes:
+            return
+
+        # 第二次确认
+        reply = QMessageBox.question(self, "确认删除 - 第二步",
+                                     "您确定删除所有未引用的图片吗？此操作不可恢复！",
+                                     QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        self._log("\n开始删除...")
+        deleted_count = 0
+        for src in self.unreferenced_images:
+            if not os.path.isfile(src):
+                self._log(f"[跳过] 文件不存在: {src}")
+                continue
+            try:
+                os.remove(src)
+                self._log(f"已删除: {os.path.basename(src)}")
+                deleted_count += 1
+            except Exception as e:
+                self._log(f"删除失败 {os.path.basename(src)}: {e}")
+
+        self._log(f"\n删除完成，共成功删除 {deleted_count}/{len(self.unreferenced_images)} 个文件。")
+        self.unreferenced_images = []
+
+
 # 主窗口
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -745,6 +1095,11 @@ class MainWindow(QMainWindow):
             self.search_edit.textChanged.connect(self.filter_notes)
             toolbar.addWidget(self.search_edit)
 
+            # ========== 新增：Ctrl+F 快捷键聚焦搜索框并全选 ==========
+            self.search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+            self.search_shortcut.activated.connect(self.focus_search)
+            # ========================================================
+
             settings_btn = QPushButton("⚙ 设置")
             settings_btn.clicked.connect(self.open_settings)
             toolbar.addWidget(settings_btn)
@@ -776,6 +1131,12 @@ class MainWindow(QMainWindow):
             self.add_btn = QPushButton("新增")
             self.add_btn.clicked.connect(self.show_add_note_menu)
             toolbar.addWidget(self.add_btn)
+
+            # ========== 新增：MD冗余按钮 ==========
+            self.md_redundant_btn = QPushButton("MD冗余")
+            self.md_redundant_btn.clicked.connect(self.open_md_redundant)
+            toolbar.addWidget(self.md_redundant_btn)
+            # ======================================
 
             toolbar.addStretch()
             main_layout.addLayout(toolbar)
@@ -826,6 +1187,18 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"初始化UI错误: {e}")
             traceback.print_exc()
+
+    # ========== 新增：打开MD冗余对话框 ==========
+    def open_md_redundant(self):
+        dialog = MDRedundantDialog(self.config, self)
+        dialog.exec_()
+    # ===========================================
+
+    # ========== 新增：Ctrl+F 触发的聚焦搜索框并全选 ==========
+    def focus_search(self):
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+    # ========================================================
 
     # =================== 新增笔记功能 ===================
     def show_add_note_menu(self):
