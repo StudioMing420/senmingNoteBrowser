@@ -355,7 +355,6 @@ class CustomListWidgetItem(QWidget):
         super().__init__()
         self.note_info = note_info
         self.theme = theme
-        self.list_item = None   # 关联的 QListWidgetItem
         self.init_ui()
 
     def init_ui(self):
@@ -409,7 +408,7 @@ class CustomListWidgetItem(QWidget):
             time_layout.addStretch()
             time_widget.setLayout(time_layout)
 
-            # 文本区域（标题+路径，自动换行）
+            # 文本区域
             text_widget = QWidget()
             text_layout = QVBoxLayout()
             text_layout.setContentsMargins(0, 0, 0, 0)
@@ -446,18 +445,7 @@ class CustomListWidgetItem(QWidget):
             print(f"创建列表项UI错误: {e}")
 
     def sizeHint(self):
-        # 根据布局返回实际需要的高度，宽度随意，由列表控制
-        return self.layout().sizeHint()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.list_item:
-            # 当控件尺寸改变时，更新对应 item 的大小并通知列表刷新
-            self.list_item.setSizeHint(self.sizeHint())
-            # 触发列表重新布局
-            list_widget = self.list_item.listWidget()
-            if list_widget:
-                list_widget.scheduleDelayedItemsLayout()
+        return QSize(800, 80)
 
 
 # 网格视图中的笔记项目
@@ -474,8 +462,8 @@ class GridItemWidget(QWidget):
     def init_ui(self):
         try:
             main_layout = QVBoxLayout()
-            main_layout.setContentsMargins(5, 5, 5, 5)
-            main_layout.setSpacing(3)
+            main_layout.setContentsMargins(10, 10, 10, 10)
+            main_layout.setSpacing(5)
             main_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
 
             # 图标
@@ -508,7 +496,7 @@ class GridItemWidget(QWidget):
             name_label.setAlignment(Qt.AlignCenter)
             name_label.setWordWrap(True)
             name_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
-            name_label.setMinimumHeight(24)
+            name_label.setMinimumHeight(30)
             font = name_label.font()
             font.setPointSize(9)
             font.setBold(True)
@@ -527,8 +515,8 @@ class GridItemWidget(QWidget):
             main_layout.addWidget(info_label)
             main_layout.addStretch()
 
-            self.setMinimumWidth(130)
-            self.setMaximumWidth(160)
+            self.setMinimumWidth(160)
+            self.setMaximumWidth(200)
             self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Minimum)
             self.setLayout(main_layout)
             self.update_style()
@@ -685,15 +673,18 @@ class MainWindow(QMainWindow):
                 self.init_tray_icon()
             self.hide()
             self.is_minimized_to_tray = True
+            # 确保托盘图标显示
             if self.tray_icon:
                 if not self.tray_icon.isVisible():
                     if QSystemTrayIcon.isSystemTrayAvailable():
                         self.tray_icon.show()
+                # 再次确保可见
                 self.tray_icon.show()
         except Exception as e:
             print(f"隐藏到托盘错误: {e}")
 
     def quit_application(self):
+        """完全退出应用程序，强制终止进程"""
         if hasattr(self, '_quitting') and self._quitting:
             return
         self._quitting = True
@@ -773,10 +764,6 @@ class MainWindow(QMainWindow):
             self.refresh_btn.clicked.connect(self.refresh_notes)
             toolbar.addWidget(self.refresh_btn)
 
-            self.add_btn = QPushButton("新增")
-            self.add_btn.clicked.connect(self.show_add_note_menu)
-            toolbar.addWidget(self.add_btn)
-
             toolbar.addStretch()
             main_layout.addLayout(toolbar)
 
@@ -785,7 +772,6 @@ class MainWindow(QMainWindow):
             list_layout = QVBoxLayout(self.list_widget)
             list_layout.setContentsMargins(0,0,0,0)
             self.notes_list = QListWidget()
-            self.notes_list.setUniformItemSizes(False)  # 允许不同高度的 item
             self.notes_list.itemDoubleClicked.connect(self.open_note_from_list)
             self.notes_list.setContextMenuPolicy(Qt.CustomContextMenu)
             self.notes_list.customContextMenuRequested.connect(self.show_list_context_menu)
@@ -803,9 +789,9 @@ class MainWindow(QMainWindow):
             self.grid_scroll_area.setWidget(self.grid_container)
             self.grid_layout = QGridLayout(self.grid_container)
             self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-            self.grid_layout.setContentsMargins(5, 5, 5, 5)
-            self.grid_layout.setHorizontalSpacing(5)
-            self.grid_layout.setVerticalSpacing(5)
+            self.grid_layout.setContentsMargins(15, 15, 15, 15)
+            self.grid_layout.setHorizontalSpacing(15)
+            self.grid_layout.setVerticalSpacing(15)
             grid_layout.addWidget(self.grid_scroll_area)
 
             self.view_container.addWidget(self.list_widget)
@@ -826,152 +812,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"初始化UI错误: {e}")
             traceback.print_exc()
-
-    # =================== 新增笔记功能 ===================
-    def show_add_note_menu(self):
-        menu = QMenu()
-        if self.current_theme == "dark":
-            menu.setStyleSheet("QMenu{background:#3c3c3c;color:white;border:1px solid #555} QMenu::item{padding:5px 20px} QMenu::item:selected{background:#4c4c4c}")
-        else:
-            menu.setStyleSheet("QMenu{background:white;color:black;border:1px solid #ccc} QMenu::item{padding:5px 20px} QMenu::item:selected{background:#f0f0f0}")
-        action_md = menu.addAction("md笔记")
-        action_md_folder = menu.addAction("md文件夹笔记")
-        action_txt = menu.addAction("txt笔记")
-        pos = self.add_btn.mapToGlobal(QPoint(0, self.add_btn.height()))
-        action = menu.exec_(pos)
-        if action == action_md:
-            self.add_simple_note("md")
-        elif action == action_md_folder:
-            self.add_folder_note()
-        elif action == action_txt:
-            self.add_simple_note("txt")
-
-    def add_simple_note(self, ext):
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"创建{ext.upper()}笔记")
-        dialog.setFixedSize(400, 150)
-        layout = QVBoxLayout(dialog)
-        form = QFormLayout()
-        name_edit = QLineEdit()
-        form.addRow("笔记名称:", name_edit)
-        layout.addLayout(form)
-        btn_box = QHBoxLayout()
-        btn_create = QPushButton("创建笔记")
-        btn_cancel = QPushButton("取消")
-        btn_box.addStretch()
-        btn_box.addWidget(btn_create)
-        btn_box.addWidget(btn_cancel)
-        layout.addLayout(btn_box)
-
-        btn_cancel.clicked.connect(dialog.reject)
-        def on_create():
-            note_name = name_edit.text().strip()
-            if not note_name:
-                QMessageBox.warning(dialog, "输入错误", "笔记名称不能为空")
-                return
-            invalid = r'<>:"/\|?*'
-            if any(c in note_name for c in invalid):
-                QMessageBox.warning(dialog, "非法字符", "笔记名称包含非法字符")
-                return
-            base_dir = self.config.data["notes_folder"]
-            if not os.path.exists(base_dir):
-                try:
-                    os.makedirs(base_dir, exist_ok=True)
-                except Exception as e:
-                    QMessageBox.critical(dialog, "错误", f"无法创建笔记文件夹:\n{str(e)}")
-                    return
-            file_path = os.path.join(base_dir, f"{note_name}.{ext}")
-            if os.path.exists(file_path):
-                QMessageBox.warning(dialog, "文件已存在", f"文件 {file_path} 已存在，请更换名称")
-                return
-            confirm = QMessageBox.question(
-                dialog, "确认创建",
-                f"是否创建 {file_path}？",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if confirm == QMessageBox.Yes:
-                try:
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        pass
-                    dialog.accept()
-                except Exception as e:
-                    QMessageBox.critical(dialog, "创建失败", f"无法创建文件:\n{str(e)}")
-        btn_create.clicked.connect(on_create)
-        if dialog.exec_() == QDialog.Accepted:
-            self.statusBar().showMessage("笔记创建成功")
-            self.refresh_notes()
-
-    def add_folder_note(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("创建MD文件夹笔记")
-        dialog.setFixedSize(450, 220)
-        layout = QVBoxLayout(dialog)
-        form = QFormLayout()
-        folder_edit = QLineEdit()
-        folder_edit.setPlaceholderText("可选，留空则使用笔记名称")
-        note_edit = QLineEdit()
-        note_edit.setPlaceholderText("必填，将作为md文件名")
-        form.addRow("文件夹名:", folder_edit)
-        form.addRow("笔记名称:", note_edit)
-        layout.addLayout(form)
-        btn_box = QHBoxLayout()
-        btn_create = QPushButton("创建笔记")
-        btn_cancel = QPushButton("取消")
-        btn_box.addStretch()
-        btn_box.addWidget(btn_create)
-        btn_box.addWidget(btn_cancel)
-        layout.addLayout(btn_box)
-
-        btn_cancel.clicked.connect(dialog.reject)
-        def on_create():
-            folder_name = folder_edit.text().strip()
-            note_name = note_edit.text().strip()
-            if not note_name:
-                QMessageBox.warning(dialog, "输入错误", "笔记名称不能为空")
-                return
-            invalid = r'<>:"/\|?*'
-            if any(c in note_name for c in invalid):
-                QMessageBox.warning(dialog, "非法字符", "笔记名称包含非法字符")
-                return
-            if folder_name and any(c in folder_name for c in invalid):
-                QMessageBox.warning(dialog, "非法字符", "文件夹名包含非法字符")
-                return
-            if not folder_name:
-                folder_name = note_name
-            base_dir = self.config.data["notes_folder"]
-            if not os.path.exists(base_dir):
-                try:
-                    os.makedirs(base_dir, exist_ok=True)
-                except Exception as e:
-                    QMessageBox.critical(dialog, "错误", f"无法创建笔记文件夹:\n{str(e)}")
-                    return
-            target_folder = os.path.join(base_dir, folder_name)
-            target_file = os.path.join(target_folder, f"{note_name}.md")
-            if os.path.exists(target_folder):
-                if not os.path.isdir(target_folder):
-                    QMessageBox.warning(dialog, "路径冲突", f"已存在同名文件 {target_folder}，无法创建文件夹")
-                    return
-            if os.path.exists(target_file):
-                QMessageBox.warning(dialog, "文件已存在", f"文件 {target_file} 已存在，请更换名称")
-                return
-            confirm = QMessageBox.question(
-                dialog, "确认创建",
-                f"是否创建文件夹:\n{target_folder}\n并在其中创建文件:\n{target_file}？",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if confirm == QMessageBox.Yes:
-                try:
-                    os.makedirs(target_folder, exist_ok=True)
-                    with open(target_file, 'w', encoding='utf-8') as f:
-                        pass
-                    dialog.accept()
-                except Exception as e:
-                    QMessageBox.critical(dialog, "创建失败", f"无法创建文件夹或文件:\n{str(e)}")
-        btn_create.clicked.connect(on_create)
-        if dialog.exec_() == QDialog.Accepted:
-            self.statusBar().showMessage("文件夹笔记创建成功")
-            self.refresh_notes()
-    # ====================================================
 
     def force_refresh_grid(self):
         if self.current_view == "grid":
@@ -1115,8 +955,6 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.UserRole, note)
                 self.notes_list.addItem(item)
                 self.notes_list.setItemWidget(item, widget)
-                # 建立关联，以便 resize 时更新 item 大小
-                widget.list_item = item
         except Exception as e:
             print(f"刷新列表视图错误: {e}")
 
@@ -1141,7 +979,7 @@ class MainWindow(QMainWindow):
             if available_width <= 0:
                 available_width = 800
 
-            item_width = 160
+            item_width = 180
             spacing = self.grid_layout.horizontalSpacing()
             items_per_row = max(1, (available_width + spacing) // (item_width + spacing))
 
@@ -1234,7 +1072,6 @@ class MainWindow(QMainWindow):
             menu.setStyleSheet("QMenu{background:white;color:black;border:1px solid #ccc} QMenu::item{padding:5px 20px} QMenu::item:selected{background:#f0f0f0}")
         open_action = menu.addAction("打开")
         show_in_explorer = menu.addAction("在文件资源管理器中显示")
-        copy_path_action = menu.addAction("复制完整路径")
         if note_info.get("is_pinned", False):
             pin_action = menu.addAction("取消置顶")
         else:
@@ -1244,21 +1081,8 @@ class MainWindow(QMainWindow):
             self.open_note_internal(note_info)
         elif action == show_in_explorer:
             self.show_in_explorer(note_info)
-        elif action == copy_path_action:
-            self.copy_full_path(note_info)
         elif action == pin_action:
             self.toggle_pin_status(note_info)
-
-    def copy_full_path(self, note_info):
-        try:
-            path = note_info.get("path", "")
-            if path and os.path.exists(path):
-                QApplication.clipboard().setText(path)
-                self.statusBar().showMessage(f"已复制路径: {path}")
-            else:
-                QMessageBox.warning(self, "错误", "无法复制路径: 文件不存在")
-        except Exception as e:
-            QMessageBox.warning(self, "错误", f"复制路径失败: {e}")
 
     def toggle_pin_status(self, note_info):
         file_path = note_info["path"]
