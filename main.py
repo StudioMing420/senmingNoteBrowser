@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-森明笔记浏览器 - 打包优化版
-作者: msm_bcf_works@163.com
-"""
 
 import os
 import sys
@@ -17,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-# ========== 隐藏控制台窗口（必须在任何输出之前）==========
 if sys.platform == "win32":
     try:
         import ctypes
@@ -30,15 +25,12 @@ if sys.platform == "win32":
     except:
         pass
 
-# PyQt5相关导入
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
 
-# 获取程序运行路径
 def get_resource_path(relative_path):
-    """获取资源文件的绝对路径，支持打包后运行"""
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -46,7 +38,27 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-# 配置管理类
+def validate_windows_name(name, is_folder=False):
+    if not name or name.strip() == "":
+        return False, "名称不能为空"
+    stripped = name.strip()
+    if stripped != name:
+        return False, "名称不能以空格开头或结尾"
+    if name.endswith('.'):
+        return False, "名称不能以点结尾"
+    forbidden = r'<>:"/\|?*'
+    if any(c in name for c in forbidden):
+        return False, f"名称不能包含以下字符: {forbidden}"
+    reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4",
+                "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
+                "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
+    if name.upper() in reserved:
+        return False, f"名称不能是Windows保留设备名: {name}"
+    if len(name) > 255:
+        return False, "名称长度不能超过255个字符"
+    return True, ""
+
+
 class Config:
     DEFAULT_CONFIG = {
         "notes_folder": str(Path.home() / "Documents" / "Notes"),
@@ -207,7 +219,6 @@ class Config:
             print(f"Windows自启动失败: {e}")
 
 
-# 文件系统扫描线程
 class FileSystemScanner(QThread):
     scan_progress = pyqtSignal(int, int, str)
     scan_complete = pyqtSignal(list)
@@ -351,13 +362,12 @@ class FileSystemScanner(QThread):
             return None
 
 
-# 自定义列表项Widget
 class CustomListWidgetItem(QWidget):
     def __init__(self, note_info: Dict, theme: str = "light"):
         super().__init__()
         self.note_info = note_info
         self.theme = theme
-        self.list_item = None   # 关联的 QListWidgetItem
+        self.list_item = None
         self.init_ui()
 
     def init_ui(self):
@@ -387,7 +397,6 @@ class CustomListWidgetItem(QWidget):
             icon_label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             icon_label.setAlignment(Qt.AlignCenter)
 
-            # 时间信息
             time_widget = QWidget()
             time_layout = QVBoxLayout()
             time_layout.setContentsMargins(0, 0, 0, 0)
@@ -411,7 +420,6 @@ class CustomListWidgetItem(QWidget):
             time_layout.addStretch()
             time_widget.setLayout(time_layout)
 
-            # 文本区域（标题+路径，自动换行）
             text_widget = QWidget()
             text_layout = QVBoxLayout()
             text_layout.setContentsMargins(0, 0, 0, 0)
@@ -448,21 +456,17 @@ class CustomListWidgetItem(QWidget):
             print(f"创建列表项UI错误: {e}")
 
     def sizeHint(self):
-        # 根据布局返回实际需要的高度，宽度随意，由列表控制
         return self.layout().sizeHint()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self.list_item:
-            # 当控件尺寸改变时，更新对应 item 的大小并通知列表刷新
             self.list_item.setSizeHint(self.sizeHint())
-            # 触发列表重新布局
             list_widget = self.list_item.listWidget()
             if list_widget:
                 list_widget.scheduleDelayedItemsLayout()
 
 
-# 网格视图中的笔记项目
 class GridItemWidget(QWidget):
     clicked = pyqtSignal(dict)
     rightClicked = pyqtSignal(dict, QPoint)
@@ -480,7 +484,6 @@ class GridItemWidget(QWidget):
             main_layout.setSpacing(3)
             main_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
 
-            # 图标
             icon_label = QLabel()
             icon_paths = [
                 "icons/" + self.note_info.get('icon', 'txt.png'),
@@ -501,7 +504,6 @@ class GridItemWidget(QWidget):
             icon_label.setPixmap(pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             icon_label.setAlignment(Qt.AlignCenter)
 
-            # 文件名
             if self.note_info.get("is_pinned", False):
                 name_text = f"📌 {self.note_info['name']}"
             else:
@@ -516,7 +518,6 @@ class GridItemWidget(QWidget):
             font.setBold(True)
             name_label.setFont(font)
 
-            # 类型和大小
             ext = self.note_info["type"]
             size_mb = self.note_info["total_size"] / (1024 * 1024)
             size_label_text = "笔记大小" if self.note_info["is_folder"] else "文件大小"
@@ -576,10 +577,7 @@ class GridItemWidget(QWidget):
             pass
 
 
-# ==================== MD冗余检查对话框（PyQt5重写） ====================
 class MDRedundantDialog(QDialog):
-    """检查MD文件中未引用的图片，支持移动/删除"""
-    # 常见图片扩展名
     IMAGE_EXTENSIONS = {
         '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico',
         '.tiff', '.tif', '.jfif', '.pjpeg', '.pjp', '.apng', '.avif',
@@ -590,17 +588,15 @@ class MDRedundantDialog(QDialog):
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
         self.config = config
-        self.unreferenced_images = []    # 未引用图片的绝对路径列表
+        self.unreferenced_images = []
         self.setWindowTitle("MD未引用图片检查 - 森明笔记")
         self.setMinimumSize(700, 500)
         self.init_ui()
-        # 默认填充笔记总文件夹路径
         self.md_path_edit.setText(self.config.data.get("notes_folder", ""))
 
     def init_ui(self):
         layout = QVBoxLayout(self)
 
-        # 第一行：MD文件路径
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("MD文件/文件夹:"))
         self.md_path_edit = QLineEdit()
@@ -613,7 +609,6 @@ class MDRedundantDialog(QDialog):
         row1.addWidget(btn_browse_folder)
         layout.addLayout(row1)
 
-        # 第二行：目标目录
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("目标目录:"))
         self.dest_edit = QLineEdit()
@@ -623,7 +618,6 @@ class MDRedundantDialog(QDialog):
         row2.addWidget(btn_browse_dest)
         layout.addLayout(row2)
 
-        # 第三行：功能按钮
         row3 = QHBoxLayout()
         self.btn_check = QPushButton("检查")
         self.btn_check.clicked.connect(self.check_md)
@@ -637,16 +631,13 @@ class MDRedundantDialog(QDialog):
         row3.addStretch()
         layout.addLayout(row3)
 
-        # 第四行：日志显示
         self.text_display = QPlainTextEdit()
         self.text_display.setReadOnly(True)
         layout.addWidget(self.text_display)
 
-        # 应用主题
         self.apply_theme()
 
     def apply_theme(self):
-        # 从主窗口获取主题
         theme = self.config.data.get("theme", "light")
         if theme == "dark":
             self.setStyleSheet("""
@@ -676,16 +667,11 @@ class MDRedundantDialog(QDialog):
         return ext.lower() in self.IMAGE_EXTENSIONS
 
     def _extract_referenced_basenames(self, md_content):
-        """从Markdown内容中提取所有引用的图片文件名（不含路径）"""
         basenames = set()
-        # 匹配 Markdown 图片语法: ![alt](url)
         md_pattern = r'!\[.*?\]\((.*?)\)'
-        # 匹配 HTML img 标签
         html_pattern = r'<img[^>]+src=["\']([^"\']+)["\']'
-
         urls = re.findall(md_pattern, md_content, re.IGNORECASE)
         urls += re.findall(html_pattern, md_content, re.IGNORECASE)
-
         for url in urls:
             if url.startswith(('http://', 'https://', '//')):
                 continue
@@ -696,7 +682,6 @@ class MDRedundantDialog(QDialog):
         return basenames
 
     def browse_md_file(self):
-        """选择单个MD文件"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "选择Markdown文件", "",
             "Markdown文件 (*.md);;所有文件 (*.*)"
@@ -705,7 +690,6 @@ class MDRedundantDialog(QDialog):
             self.md_path_edit.setText(file_path)
 
     def browse_folder(self):
-        """选择文件夹（扫描模式）"""
         dir_path = QFileDialog.getExistingDirectory(self, "选择包含Markdown文件的文件夹")
         if dir_path:
             self.md_path_edit.setText(dir_path)
@@ -716,7 +700,6 @@ class MDRedundantDialog(QDialog):
             self.dest_edit.setText(dir_path)
 
     def check_md(self):
-        """检查MD文件未引用的图片（支持单文件或文件夹扫描）"""
         self._clear_log()
         self.unreferenced_images = []
 
@@ -725,7 +708,6 @@ class MDRedundantDialog(QDialog):
             QMessageBox.warning(self, "提示", "请输入或选择一个MD文件或文件夹")
             return
 
-        # 判断是文件夹还是文件
         if os.path.isdir(path):
             self._check_folder(path)
         elif os.path.isfile(path) and path.lower().endswith('.md'):
@@ -734,7 +716,6 @@ class MDRedundantDialog(QDialog):
             QMessageBox.warning(self, "提示", "路径无效，请输入有效的 .md 文件路径或文件夹路径")
 
     def _check_single_file(self, md_path):
-        """检查单个MD文件"""
         self._log(f"检查文件: {md_path}")
         md_dir = os.path.dirname(os.path.abspath(md_path))
         md_basename = os.path.basename(md_path)
@@ -772,7 +753,6 @@ class MDRedundantDialog(QDialog):
             self.unreferenced_images = [os.path.join(assets_dir, img) for img in unreferenced]
 
     def _check_folder(self, folder):
-        """扫描文件夹内所有MD文件，汇总未引用图片"""
         self._log(f"开始扫描文件夹: {folder}")
         md_files = []
         for root, dirs, files in os.walk(folder):
@@ -832,7 +812,6 @@ class MDRedundantDialog(QDialog):
         self.unreferenced_images = total_unreferenced
 
     def move_images(self):
-        """移动未引用图片到目标目录（带确认列表）"""
         if not self.unreferenced_images:
             if self.text_display.toPlainText().strip() == "":
                 QMessageBox.warning(self, "提示", "请先执行“检查”操作")
@@ -852,7 +831,6 @@ class MDRedundantDialog(QDialog):
             QMessageBox.critical(self, "错误", f"无法创建目标目录: {e}")
             return
 
-        # 准备文件列表
         file_list = "\n".join(os.path.basename(p) for p in self.unreferenced_images)
         msg_box = QMessageBox(QMessageBox.Question, "确认移动",
                               f"以下 {len(self.unreferenced_images)} 个未引用图片将被移动到:\n{dest}\n\n确定继续吗？",
@@ -883,7 +861,6 @@ class MDRedundantDialog(QDialog):
         self.unreferenced_images = []
 
     def delete_images(self):
-        """删除未引用图片（两次确认）"""
         if not self.unreferenced_images:
             if self.text_display.toPlainText().strip() == "":
                 QMessageBox.warning(self, "提示", "请先执行“检查”操作")
@@ -891,7 +868,6 @@ class MDRedundantDialog(QDialog):
                 QMessageBox.information(self, "提示", "没有未引用的图片可删除")
             return
 
-        # 第一次确认：显示列表
         file_list = "\n".join(os.path.basename(p) for p in self.unreferenced_images)
         msg_box = QMessageBox(QMessageBox.Question, "确认删除 - 第一步",
                               "以下图片将被删除，确定继续吗？",
@@ -900,7 +876,6 @@ class MDRedundantDialog(QDialog):
         if msg_box.exec_() != QMessageBox.Yes:
             return
 
-        # 第二次确认
         reply = QMessageBox.question(self, "确认删除 - 第二步",
                                      "您确定删除所有未引用的图片吗？此操作不可恢复！",
                                      QMessageBox.Yes | QMessageBox.No)
@@ -924,7 +899,6 @@ class MDRedundantDialog(QDialog):
         self.unreferenced_images = []
 
 
-# 主窗口
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -940,7 +914,6 @@ class MainWindow(QMainWindow):
         self.start_minimized = "--minimized" in sys.argv
         self._force_quit = False
 
-        # 托盘守护定时器
         self.tray_watchdog = QTimer()
         self.tray_watchdog.timeout.connect(self.ensure_tray_visible)
         self.tray_watchdog.setInterval(2000)
@@ -1095,10 +1068,8 @@ class MainWindow(QMainWindow):
             self.search_edit.textChanged.connect(self.filter_notes)
             toolbar.addWidget(self.search_edit)
 
-            # ========== 新增：Ctrl+F 快捷键聚焦搜索框并全选 ==========
             self.search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
             self.search_shortcut.activated.connect(self.focus_search)
-            # ========================================================
 
             settings_btn = QPushButton("⚙ 设置")
             settings_btn.clicked.connect(self.open_settings)
@@ -1132,11 +1103,9 @@ class MainWindow(QMainWindow):
             self.add_btn.clicked.connect(self.show_add_note_menu)
             toolbar.addWidget(self.add_btn)
 
-            # ========== 新增：MD冗余按钮 ==========
             self.md_redundant_btn = QPushButton("MD冗余")
             self.md_redundant_btn.clicked.connect(self.open_md_redundant)
             toolbar.addWidget(self.md_redundant_btn)
-            # ======================================
 
             toolbar.addStretch()
             main_layout.addLayout(toolbar)
@@ -1146,7 +1115,7 @@ class MainWindow(QMainWindow):
             list_layout = QVBoxLayout(self.list_widget)
             list_layout.setContentsMargins(0,0,0,0)
             self.notes_list = QListWidget()
-            self.notes_list.setUniformItemSizes(False)  # 允许不同高度的 item
+            self.notes_list.setUniformItemSizes(False)
             self.notes_list.itemDoubleClicked.connect(self.open_note_from_list)
             self.notes_list.setContextMenuPolicy(Qt.CustomContextMenu)
             self.notes_list.customContextMenuRequested.connect(self.show_list_context_menu)
@@ -1188,19 +1157,14 @@ class MainWindow(QMainWindow):
             print(f"初始化UI错误: {e}")
             traceback.print_exc()
 
-    # ========== 新增：打开MD冗余对话框 ==========
     def open_md_redundant(self):
         dialog = MDRedundantDialog(self.config, self)
         dialog.exec_()
-    # ===========================================
 
-    # ========== 新增：Ctrl+F 触发的聚焦搜索框并全选 ==========
     def focus_search(self):
         self.search_edit.setFocus()
         self.search_edit.selectAll()
-    # ========================================================
 
-    # =================== 新增笔记功能 ===================
     def show_add_note_menu(self):
         menu = QMenu()
         if self.current_theme == "dark":
@@ -1242,9 +1206,9 @@ class MainWindow(QMainWindow):
             if not note_name:
                 QMessageBox.warning(dialog, "输入错误", "笔记名称不能为空")
                 return
-            invalid = r'<>:"/\|?*'
-            if any(c in note_name for c in invalid):
-                QMessageBox.warning(dialog, "非法字符", "笔记名称包含非法字符")
+            valid, err = validate_windows_name(note_name, is_folder=False)
+            if not valid:
+                QMessageBox.warning(dialog, "非法名称", err)
                 return
             base_dir = self.config.data["notes_folder"]
             if not os.path.exists(base_dir):
@@ -1302,14 +1266,16 @@ class MainWindow(QMainWindow):
             if not note_name:
                 QMessageBox.warning(dialog, "输入错误", "笔记名称不能为空")
                 return
-            invalid = r'<>:"/\|?*'
-            if any(c in note_name for c in invalid):
-                QMessageBox.warning(dialog, "非法字符", "笔记名称包含非法字符")
+            valid, err = validate_windows_name(note_name, is_folder=False)
+            if not valid:
+                QMessageBox.warning(dialog, "非法笔记名称", err)
                 return
-            if folder_name and any(c in folder_name for c in invalid):
-                QMessageBox.warning(dialog, "非法字符", "文件夹名包含非法字符")
-                return
-            if not folder_name:
+            if folder_name:
+                valid, err = validate_windows_name(folder_name, is_folder=True)
+                if not valid:
+                    QMessageBox.warning(dialog, "非法文件夹名", err)
+                    return
+            else:
                 folder_name = note_name
             base_dir = self.config.data["notes_folder"]
             if not os.path.exists(base_dir):
@@ -1344,7 +1310,6 @@ class MainWindow(QMainWindow):
         if dialog.exec_() == QDialog.Accepted:
             self.statusBar().showMessage("文件夹笔记创建成功")
             self.refresh_notes()
-    # ====================================================
 
     def force_refresh_grid(self):
         if self.current_view == "grid":
@@ -1488,7 +1453,6 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.UserRole, note)
                 self.notes_list.addItem(item)
                 self.notes_list.setItemWidget(item, widget)
-                # 建立关联，以便 resize 时更新 item 大小
                 widget.list_item = item
         except Exception as e:
             print(f"刷新列表视图错误: {e}")
@@ -1608,6 +1572,7 @@ class MainWindow(QMainWindow):
         open_action = menu.addAction("打开")
         show_in_explorer = menu.addAction("在文件资源管理器中显示")
         copy_path_action = menu.addAction("复制完整路径")
+        rename_action = menu.addAction("重命名")
         if note_info.get("is_pinned", False):
             pin_action = menu.addAction("取消置顶")
         else:
@@ -1619,8 +1584,198 @@ class MainWindow(QMainWindow):
             self.show_in_explorer(note_info)
         elif action == copy_path_action:
             self.copy_full_path(note_info)
+        elif action == rename_action:
+            self.rename_note(note_info)
         elif action == pin_action:
             self.toggle_pin_status(note_info)
+
+    def rename_note(self, note_info):
+        is_folder = note_info.get("is_folder", False)
+        old_folder_path = note_info.get("folder_path", "")
+        old_file_path = note_info["path"]
+        old_file_basename = os.path.basename(old_file_path)
+        old_file_name_no_ext, old_ext = os.path.splitext(old_file_basename)
+        old_ext = old_ext.lstrip('.')
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("重命名笔记")
+        layout = QVBoxLayout(dialog)
+
+        if is_folder:
+            form = QFormLayout()
+            folder_edit = QLineEdit()
+            folder_edit.setText(os.path.basename(old_folder_path))
+            folder_edit.setPlaceholderText("文件夹名（留空则自动使用笔记名）")
+            form.addRow("文件夹名:", folder_edit)
+            file_edit = QLineEdit()
+            file_edit.setText(old_file_name_no_ext)
+            form.addRow("笔记文件名:", file_edit)
+            layout.addLayout(form)
+        else:
+            file_edit = QLineEdit()
+            file_edit.setText(old_file_name_no_ext)
+            layout.addWidget(QLabel("新文件名:"))
+            layout.addWidget(file_edit)
+
+        btn_box = QHBoxLayout()
+        btn_update = QPushButton("更新笔记名字")
+        btn_cancel = QPushButton("取消")
+        btn_box.addStretch()
+        btn_box.addWidget(btn_update)
+        btn_box.addWidget(btn_cancel)
+        layout.addLayout(btn_box)
+
+        dialog.setMinimumWidth(400)
+
+        def on_update():
+            new_file_name = file_edit.text().strip()
+            if not new_file_name:
+                QMessageBox.warning(dialog, "输入错误", "笔记文件名不能为空")
+                return
+            valid, err = validate_windows_name(new_file_name, is_folder=False)
+            if not valid:
+                QMessageBox.warning(dialog, "非法笔记文件名", err)
+                return
+
+            new_folder_name = None
+            if is_folder:
+                folder_name = folder_edit.text().strip()
+                if folder_name:
+                    valid, err = validate_windows_name(folder_name, is_folder=True)
+                    if not valid:
+                        QMessageBox.warning(dialog, "非法文件夹名", err)
+                        return
+                    new_folder_name = folder_name
+                else:
+                    new_folder_name = new_file_name
+
+            old_folder_abs = os.path.abspath(old_folder_path)
+            old_file_abs = os.path.abspath(old_file_path)
+            base_dir = os.path.dirname(old_folder_abs) if is_folder else os.path.dirname(old_file_abs)
+
+            file_name_changed = (new_file_name != old_file_name_no_ext)
+            folder_name_changed = (is_folder and new_folder_name != os.path.basename(old_folder_abs))
+
+            if not file_name_changed and not folder_name_changed:
+                QMessageBox.information(dialog, "提示", "名称未发生变化，无需重命名")
+                return
+
+            # 构建新路径（在旧文件夹内）
+            if is_folder:
+                new_file_path_in_old_folder = os.path.join(old_folder_abs, f"{new_file_name}.{old_ext}")
+                new_assets_in_old_folder = os.path.join(old_folder_abs, f"{new_file_name}.assets")
+                old_assets = os.path.join(old_folder_abs, f"{old_file_name_no_ext}.assets")
+            else:
+                new_file_path = os.path.join(base_dir, f"{new_file_name}.{old_ext}")
+                if os.path.exists(new_file_path):
+                    QMessageBox.warning(dialog, "错误", f"目标文件已存在: {new_file_path}")
+                    return
+
+            # 确认对话框
+            if is_folder:
+                old_show = f"文件夹 '{os.path.basename(old_folder_abs)}' 和文件 '{old_file_basename}'"
+                new_folder_display = new_folder_name if folder_name_changed else os.path.basename(old_folder_abs)
+                new_show = f"文件夹 '{new_folder_display}' 和文件 '{new_file_name}.{old_ext}'"
+            else:
+                old_show = f"文件 '{old_file_basename}'"
+                new_show = f"文件 '{new_file_name}.{old_ext}'"
+
+            confirm = QMessageBox.question(
+                dialog, "确认重命名",
+                f"是否将 {old_show} 重命名为 {new_show} ？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if confirm != QMessageBox.Yes:
+                return
+
+            try:
+                if is_folder:
+                    # 1. 重命名 .md 文件（在旧文件夹内）
+                    if file_name_changed:
+                        if os.path.exists(new_file_path_in_old_folder):
+                            QMessageBox.warning(dialog, "错误", f"目标文件已存在: {new_file_path_in_old_folder}")
+                            return
+                        os.rename(old_file_abs, new_file_path_in_old_folder)
+                        current_file_path = new_file_path_in_old_folder
+                    else:
+                        current_file_path = old_file_abs
+
+                    # 2. 重命名 .assets 文件夹（如果文件名变了）
+                    if file_name_changed and os.path.exists(old_assets):
+                        if os.path.exists(new_assets_in_old_folder):
+                            QMessageBox.warning(dialog, "错误", f"目标 .assets 文件夹已存在: {new_assets_in_old_folder}")
+                            # 回退文件重命名
+                            os.rename(current_file_path, old_file_abs)
+                            return
+                        os.rename(old_assets, new_assets_in_old_folder)
+
+                    # 3. 更新文件内容中的图片引用（只替换 .assets/ 前的文件名，不转义）
+                    if file_name_changed:
+                        try:
+                            with open(current_file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            # 旧模式需要转义，新模式直接拼接
+                            old_pattern = re.escape(old_file_name_no_ext) + r'\.assets/'
+                            new_pattern = new_file_name + '.assets/'
+                            new_content = re.sub(old_pattern, new_pattern, content)
+                            if new_content != content:
+                                with open(current_file_path, 'w', encoding='utf-8') as f:
+                                    f.write(new_content)
+                        except Exception as e:
+                            print(f"更新文件内容失败: {e}")
+
+                    # 4. 重命名外层文件夹（如果文件夹名变了）
+                    if folder_name_changed:
+                        new_folder_abs = os.path.join(base_dir, new_folder_name)
+                        if os.path.exists(new_folder_abs):
+                            # 回退之前的修改
+                            if file_name_changed:
+                                os.rename(current_file_path, old_file_abs)
+                                if os.path.exists(new_assets_in_old_folder):
+                                    os.rename(new_assets_in_old_folder, old_assets)
+                            QMessageBox.warning(dialog, "错误", f"目标文件夹已存在: {new_folder_abs}")
+                            return
+                        os.rename(old_folder_abs, new_folder_abs)
+                        note_info["folder_path"] = new_folder_abs
+                        note_info["path"] = os.path.join(new_folder_abs, f"{new_file_name}.{old_ext}")
+                        note_info["name"] = new_folder_name
+                    else:
+                        note_info["folder_path"] = old_folder_abs
+                        note_info["path"] = current_file_path
+                        if file_name_changed:
+                            note_info["name"] = os.path.basename(old_folder_abs)
+                        else:
+                            note_info["name"] = os.path.basename(old_folder_abs)
+                else:
+                    # 纯文件重命名
+                    new_file_path = os.path.join(base_dir, f"{new_file_name}.{old_ext}")
+                    if os.path.exists(new_file_path):
+                        QMessageBox.warning(dialog, "错误", f"目标文件已存在: {new_file_path}")
+                        return
+                    os.rename(old_file_abs, new_file_path)
+                    note_info["path"] = new_file_path
+                    note_info["name"] = f"{new_file_name}.{old_ext}"
+
+                # 更新置顶状态
+                old_pinned_path = old_file_abs
+                new_file_abs = note_info["path"]
+                if self.config.is_note_pinned(old_pinned_path):
+                    self.config.unpin_note(old_pinned_path)
+                    self.config.pin_note(new_file_abs)
+                    note_info["is_pinned"] = True
+
+                self.update_all_notes_pinned_status()
+                self.display_notes(self.filtered_notes if self.filtered_notes else self.current_notes)
+                self.statusBar().showMessage("重命名成功")
+                dialog.accept()
+                self.refresh_notes()
+            except Exception as e:
+                QMessageBox.critical(dialog, "重命名失败", f"重命名时发生错误:\n{str(e)}")
+
+        btn_update.clicked.connect(on_update)
+        btn_cancel.clicked.connect(dialog.reject)
+
+        dialog.exec_()
 
     def copy_full_path(self, note_info):
         try:
